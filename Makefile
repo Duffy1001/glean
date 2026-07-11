@@ -81,16 +81,16 @@ $(BRIDGE_OBJ): $(CBRIDGE_DIR)/schema_bridge.cpp $(CBRIDGE_DIR)/schema_bridge.h
 		$< -o $@
 
 build-go: build-llama build-bridge
-	CGO_ENABLED=1 go build -o jsonify .
+	CGO_ENABLED=1 go build -o glean .
 
 static: build-llama build-bridge
-	CGO_ENABLED=1 go build -ldflags '-s -w -extldflags=-static' -tags 'osusergo netgo' -o jsonify-static .
+	CGO_ENABLED=1 go build -ldflags '-s -w -extldflags=-static' -tags 'osusergo netgo' -o glean-static .
 
 test: build-bridge
 	go test -v ./...
 
 clean-native:
-	rm -f jsonify jsonify-static $(BRIDGE_OBJ)
+	rm -f glean glean-static $(BRIDGE_OBJ)
 
 clean:
-	rm -rf $(BUILD_DIR) $(BRIDGE_OBJ) jsonify jsonify-static dist
+	rm -rf $(BUILD_DIR) $(BRIDGE_OBJ) glean glean-static dist

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Cross-compilation release script for jsonify
+# Cross-compilation release script for glean
 # Builds static binaries for multiple platforms.
 #
 # Usage:
@@ -13,7 +13,7 @@ set -euo pipefail
 #   - Docker (for linux/arm64 cross-compile)
 #   - Native build for darwin and windows requires running on that platform
 #
-# Output: dist/jsonify-<os>-<arch>[.exe]
+# Output: dist/glean-<os>-<arch>[.exe]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="${SCRIPT_DIR}/dist"
@@ -26,18 +26,18 @@ build_native() {
     local arch="$2"
     local suffix=""
     [ "$os" = "windows" ] && suffix=".exe"
-    local out="${DIST_DIR}/jsonify-${os}-${arch}${suffix}"
+    local out="${DIST_DIR}/glean-${os}-${arch}${suffix}"
 
-    echo "=== Building jsonify-${os}-${arch} (native) ==="
+    echo "=== Building glean-${os}-${arch} (native) ==="
 
     cd "${SCRIPT_DIR}"
     make clean-native
     make static
 
     if [ "$os" = "windows" ] && [ "$suffix" = ".exe" ]; then
-        mv jsonify-static "$out"
+        mv glean-static "$out"
     else
-        cp jsonify-static "$out" 2>/dev/null || cp jsonify "$out"
+        cp glean-static "$out" 2>/dev/null || cp glean "$out"
     fi
 
     echo "Built: $out ($(ls -lh "$out" | awk '{print $5}'))"
@@ -49,9 +49,9 @@ build_cross_linux() {
     local cxx="$3"
     local cmake_toolchain="$4"
     local suffix=""
-    local out="${DIST_DIR}/jsonify-linux-${arch}"
+    local out="${DIST_DIR}/glean-linux-${arch}"
 
-    echo "=== Building jsonify-linux-${arch} (cross-compile via Docker) ==="
+    echo "=== Building glean-linux-${arch} (cross-compile via Docker) ==="
 
     local docker_arch
     case "$arch" in
@@ -67,7 +67,7 @@ build_cross_linux() {
                 build-essential cmake git g++ > /dev/null 2>&1
             make clean
             make static
-            mv jsonify-static dist/jsonify-linux-'"${arch}"'
+            mv glean-static dist/glean-linux-'"${arch}"'
         '
 
     echo "Built: $out ($(ls -lh "$out" 2>/dev/null | awk '{print $5}'))"

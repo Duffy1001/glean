@@ -8,7 +8,7 @@
 using json = nlohmann::ordered_json;
 
 extern "C"
-char *jsonify_schema_to_grammar(const char *json_schema, char **err_msg) {
+char *glean_schema_to_grammar(const char *json_schema, char **err_msg) {
     if (err_msg) *err_msg = NULL;
 
     if (!json_schema) {

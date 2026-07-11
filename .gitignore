@@ -4,9 +4,9 @@ build/
 *.obj
 
 # Compiled binaries
-jsonify
-jsonify-static
-jsonify.exe
+glean
+glean-static
+glean.exe
 
 # Vendored llama.cpp source (clone via: make setup)
 llama.cpp/

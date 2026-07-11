@@ -1,4 +1,4 @@
-module github.com/duffy/jsonify
+module github.com/duffy/glean
 
 go 1.26.4
 

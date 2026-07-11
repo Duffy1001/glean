@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duffy/jsonify/llama"
+	"github.com/duffy/glean/llama"
 )
 
 func main() {

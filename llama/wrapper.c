@@ -6,19 +6,19 @@
 
 static int g_log_level = 2;
 
-static void jsonify_log_callback(enum ggml_log_level level, const char * text, void * user_data) {
+static void glean_log_callback(enum ggml_log_level level, const char * text, void * user_data) {
     (void)user_data;
     if (level >= g_log_level) {
         fputs(text, stderr);
     }
 }
 
-void jsonify_set_log_level(int32_t level) {
+void glean_set_log_level(int32_t level) {
     g_log_level = level;
-    llama_log_set(jsonify_log_callback, NULL);
+    llama_log_set(glean_log_callback, NULL);
 }
 
-jsonify_model_t * jsonify_load(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers) {
+glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers) {
     struct llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = n_gpu_layers;
     mparams.use_mmap = true;
@@ -50,7 +50,7 @@ jsonify_model_t * jsonify_load(const char * model_path, int32_t n_ctx, int32_t n
     const struct llama_vocab * vocab = llama_model_get_vocab(model);
     int32_t n_vocab = llama_vocab_n_tokens(vocab);
 
-    jsonify_model_t * m = (jsonify_model_t *)calloc(1, sizeof(jsonify_model_t));
+    glean_model_t * m = (glean_model_t *)calloc(1, sizeof(glean_model_t));
     m->model = model;
     m->ctx = ctx;
     m->chain = chain;
@@ -61,7 +61,7 @@ jsonify_model_t * jsonify_load(const char * model_path, int32_t n_ctx, int32_t n
     return m;
 }
 
-void jsonify_free(jsonify_model_t * m) {
+void glean_free(glean_model_t * m) {
     if (!m) return;
     if (m->grammar) llama_sampler_free(m->grammar);
     if (m->chain) llama_sampler_free(m->chain);
@@ -70,21 +70,21 @@ void jsonify_free(jsonify_model_t * m) {
     free(m);
 }
 
-int32_t jsonify_tokenize(jsonify_model_t * m, const char * text, int32_t * tokens_buf, int32_t capacity, bool add_bos, bool parse_special) {
+int32_t glean_tokenize(glean_model_t * m, const char * text, int32_t * tokens_buf, int32_t capacity, bool add_bos, bool parse_special) {
     return llama_tokenize(m->vocab, text, (int32_t)strlen(text), tokens_buf, capacity, add_bos, parse_special);
 }
 
-int32_t jsonify_decode(jsonify_model_t * m, const int32_t * tokens, int32_t n_tokens) {
+int32_t glean_decode(glean_model_t * m, const int32_t * tokens, int32_t n_tokens) {
     struct llama_batch batch = llama_batch_get_one((llama_token *)tokens, n_tokens);
     int32_t ret = llama_decode(m->ctx, batch);
     return ret;
 }
 
-void jsonify_synchronize(jsonify_model_t * m) {
+void glean_synchronize(glean_model_t * m) {
     llama_synchronize(m->ctx);
 }
 
-int32_t jsonify_sample_next(jsonify_model_t * m) {
+int32_t glean_sample_next(glean_model_t * m) {
     int32_t n_vocab = m->n_vocab;
 
     // Get logits
@@ -112,26 +112,26 @@ int32_t jsonify_sample_next(jsonify_model_t * m) {
     return id;
 }
 
-void jsonify_accept_token(jsonify_model_t * m, int32_t token) {
+void glean_accept_token(glean_model_t * m, int32_t token) {
     if (m->grammar) {
         llama_sampler_accept(m->grammar, token);
     }
     llama_sampler_accept(m->chain, token);
 }
 
-int32_t jsonify_n_vocab(jsonify_model_t * m) {
+int32_t glean_n_vocab(glean_model_t * m) {
     return m->n_vocab;
 }
 
-int32_t jsonify_token_eos(jsonify_model_t * m) {
+int32_t glean_token_eos(glean_model_t * m) {
     return llama_vocab_eos(m->vocab);
 }
 
-int32_t jsonify_token_to_piece(jsonify_model_t * m, int32_t token, char * buf, int32_t buf_len) {
+int32_t glean_token_to_piece(glean_model_t * m, int32_t token, char * buf, int32_t buf_len) {
     return llama_token_to_piece(m->vocab, token, buf, buf_len, 0, true);
 }
 
-int32_t jsonify_set_grammar(jsonify_model_t * m, const char * grammar_str, const char * grammar_root) {
+int32_t glean_set_grammar(glean_model_t * m, const char * grammar_str, const char * grammar_root) {
     if (m->grammar) {
         llama_sampler_free(m->grammar);
         m->grammar = NULL;
@@ -143,18 +143,18 @@ int32_t jsonify_set_grammar(jsonify_model_t * m, const char * grammar_str, const
     return 0;
 }
 
-void jsonify_clear_grammar(jsonify_model_t * m) {
+void glean_clear_grammar(glean_model_t * m) {
     if (m->grammar) {
         llama_sampler_free(m->grammar);
         m->grammar = NULL;
     }
 }
 
-void jsonify_sampler_free(struct llama_sampler * smpl) {
+void glean_sampler_free(struct llama_sampler * smpl) {
     if (smpl) llama_sampler_free(smpl);
 }
 
-char *jsonify_chat_apply_template(jsonify_model_t * m,
+char *glean_chat_apply_template(glean_model_t * m,
                                   const char * system_msg,
                                   const char * user_msg,
                                   bool add_ass) {

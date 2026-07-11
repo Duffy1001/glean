@@ -10,7 +10,7 @@ extern "C" {
 //             *err_msg is set to NULL.
 // On failure: returns NULL, *err_msg is set to a newly allocated error string
 //             (caller must free). If err_msg is NULL, no error message is returned.
-char *jsonify_schema_to_grammar(const char *json_schema, char **err_msg);
+char *glean_schema_to_grammar(const char *json_schema, char **err_msg);
 
 #ifdef __cplusplus
 }

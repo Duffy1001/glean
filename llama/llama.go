@@ -18,18 +18,18 @@ import (
 )
 
 type Model struct {
-	ptr *C.jsonify_model_t
+	ptr *C.glean_model_t
 }
 
 func SetLogLevel(level int) {
-	C.jsonify_set_log_level(C.int32_t(level))
+	C.glean_set_log_level(C.int32_t(level))
 }
 
 func Load(modelPath string, nCtx int, nThreads int, nGPULayers int) (*Model, error) {
 	cPath := C.CString(modelPath)
 	defer C.free(unsafe.Pointer(cPath))
 
-	m := C.jsonify_load(cPath, C.int32_t(nCtx), C.int32_t(nThreads), C.int32_t(nGPULayers))
+	m := C.glean_load(cPath, C.int32_t(nCtx), C.int32_t(nThreads), C.int32_t(nGPULayers))
 	if m == nil {
 		return nil, fmt.Errorf("failed to load model from %s", modelPath)
 	}
@@ -38,7 +38,7 @@ func Load(modelPath string, nCtx int, nThreads int, nGPULayers int) (*Model, err
 
 func (m *Model) Free() {
 	if m.ptr != nil {
-		C.jsonify_free(m.ptr)
+		C.glean_free(m.ptr)
 		m.ptr = nil
 	}
 }
@@ -49,11 +49,11 @@ func (m *Model) Tokenize(text string, addBOS bool, parseSpecial bool) ([]int32, 
 
 	cap := 8192
 	tokens := make([]int32, cap)
-	n := C.jsonify_tokenize(m.ptr, cText, (*C.int32_t)(unsafe.Pointer(&tokens[0])), C.int32_t(cap), C.bool(addBOS), C.bool(parseSpecial))
+	n := C.glean_tokenize(m.ptr, cText, (*C.int32_t)(unsafe.Pointer(&tokens[0])), C.int32_t(cap), C.bool(addBOS), C.bool(parseSpecial))
 	if n < 0 {
 		needed := -int32(n)
 		tokens = make([]int32, needed)
-		n = C.jsonify_tokenize(m.ptr, cText, (*C.int32_t)(unsafe.Pointer(&tokens[0])), C.int32_t(needed), C.bool(addBOS), C.bool(parseSpecial))
+		n = C.glean_tokenize(m.ptr, cText, (*C.int32_t)(unsafe.Pointer(&tokens[0])), C.int32_t(needed), C.bool(addBOS), C.bool(parseSpecial))
 		if n < 0 {
 			return nil, fmt.Errorf("tokenization failed")
 		}
@@ -63,13 +63,13 @@ func (m *Model) Tokenize(text string, addBOS bool, parseSpecial bool) ([]int32, 
 
 func (m *Model) TokenToPiece(token int32) string {
 	buf := make([]byte, 256)
-	n := C.jsonify_token_to_piece(m.ptr, C.int32_t(token), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(len(buf)))
+	n := C.glean_token_to_piece(m.ptr, C.int32_t(token), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(len(buf)))
 	if n > 0 {
 		return string(buf[:n])
 	}
 	if n < 0 {
 		buf = make([]byte, -n)
-		n = C.jsonify_token_to_piece(m.ptr, C.int32_t(token), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(len(buf)))
+		n = C.glean_token_to_piece(m.ptr, C.int32_t(token), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(len(buf)))
 		if n > 0 {
 			return string(buf[:n])
 		}
@@ -81,7 +81,7 @@ func (m *Model) Decode(tokens []int32) error {
 	if len(tokens) == 0 {
 		return nil
 	}
-	n := C.jsonify_decode(m.ptr, (*C.int32_t)(unsafe.Pointer(&tokens[0])), C.int32_t(len(tokens)))
+	n := C.glean_decode(m.ptr, (*C.int32_t)(unsafe.Pointer(&tokens[0])), C.int32_t(len(tokens)))
 	if n != 0 {
 		return fmt.Errorf("decode failed with code %d", n)
 	}
@@ -89,20 +89,20 @@ func (m *Model) Decode(tokens []int32) error {
 }
 
 func (m *Model) SampleNext() int32 {
-	C.jsonify_synchronize(m.ptr)
-	return int32(C.jsonify_sample_next(m.ptr))
+	C.glean_synchronize(m.ptr)
+	return int32(C.glean_sample_next(m.ptr))
 }
 
 func (m *Model) AcceptToken(token int32) {
-	C.jsonify_accept_token(m.ptr, C.int32_t(token))
+	C.glean_accept_token(m.ptr, C.int32_t(token))
 }
 
 func (m *Model) NVocab() int32 {
-	return int32(C.jsonify_n_vocab(m.ptr))
+	return int32(C.glean_n_vocab(m.ptr))
 }
 
 func (m *Model) TokenEOS() int32 {
-	return int32(C.jsonify_token_eos(m.ptr))
+	return int32(C.glean_token_eos(m.ptr))
 }
 
 func (m *Model) SetGrammar(grammarStr string, grammarRoot string) error {
@@ -110,7 +110,7 @@ func (m *Model) SetGrammar(grammarStr string, grammarRoot string) error {
 	defer C.free(unsafe.Pointer(cGrammar))
 	cRoot := C.CString(grammarRoot)
 	defer C.free(unsafe.Pointer(cRoot))
-	ret := C.jsonify_set_grammar(m.ptr, cGrammar, cRoot)
+	ret := C.glean_set_grammar(m.ptr, cGrammar, cRoot)
 	if ret != 0 {
 		return fmt.Errorf("failed to initialize grammar sampler")
 	}
@@ -118,7 +118,7 @@ func (m *Model) SetGrammar(grammarStr string, grammarRoot string) error {
 }
 
 func (m *Model) ClearGrammar() {
-	C.jsonify_clear_grammar(m.ptr)
+	C.glean_clear_grammar(m.ptr)
 }
 
 // DecodeAndSample is a convenience method that decodes tokens and samples the next token.
@@ -138,7 +138,7 @@ func SchemaToGrammar(jsonSchema string) (string, error) {
 	defer C.free(unsafe.Pointer(cSchema))
 
 	var cErr *C.char
-	result := C.jsonify_schema_to_grammar(cSchema, &cErr)
+	result := C.glean_schema_to_grammar(cSchema, &cErr)
 	if result == nil {
 		if cErr != nil {
 			errMsg := C.GoString(cErr)
@@ -166,7 +166,7 @@ func (m *Model) ChatApplyTemplate(systemMsg, userMsg string, addAss bool) (strin
 		defer C.free(unsafe.Pointer(cUser))
 	}
 
-	result := C.jsonify_chat_apply_template(m.ptr, cSys, cUser, C.bool(addAss))
+	result := C.glean_chat_apply_template(m.ptr, cSys, cUser, C.bool(addAss))
 	if result == nil {
 		return "", fmt.Errorf("chat template application failed")
 	}

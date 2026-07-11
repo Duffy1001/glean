@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duffy/jsonify/llama"
+	"github.com/duffy/glean/llama"
 )
 
 var defaultSchema = `{
