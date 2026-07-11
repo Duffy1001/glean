@@ -93,8 +93,11 @@ func (m *Model) SampleNext() int32 {
 	return int32(C.glean_sample_next(m.ptr))
 }
 
-func (m *Model) ClearContext() {
-	C.glean_clear_context(m.ptr)
+func (m *Model) ClearContext() error {
+	if !bool(C.glean_clear_context(m.ptr)) {
+		return fmt.Errorf("failed to clear model context")
+	}
+	return nil
 }
 
 func (m *Model) AcceptToken(token int32) {

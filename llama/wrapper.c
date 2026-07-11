@@ -31,6 +31,7 @@ glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_thr
 
     struct llama_context_params cparams = llama_context_default_params();
     if (n_ctx > 0) cparams.n_ctx = n_ctx;
+    if (n_ctx > 0) cparams.n_batch = n_ctx;
     if (n_threads > 0) {
         cparams.n_threads = n_threads;
         cparams.n_threads_batch = n_threads;
@@ -84,8 +85,9 @@ void glean_synchronize(glean_model_t * m) {
     llama_synchronize(m->ctx);
 }
 
-void glean_clear_context(glean_model_t * m) {
-    llama_memory_clear(llama_get_memory(m->ctx), true);
+bool glean_clear_context(glean_model_t * m) {
+    llama_memory_t mem = llama_get_memory(m->ctx);
+    return llama_memory_seq_rm(mem, -1, -1, -1);
 }
 
 int32_t glean_sample_next(glean_model_t * m) {
