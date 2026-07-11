@@ -54,7 +54,7 @@ func modelCacheDir() (string, error) {
 	return filepath.Join(home, ".cache", "jsonify", "models"), nil
 }
 
-func resolveModel(choice string) (string, error) {
+func resolveModel(choice string, verbose bool) (string, error) {
 	info, ok := modelRegistry[choice]
 	if !ok {
 		return "", fmt.Errorf("unknown model %q (available: fast, quality)", choice)
@@ -73,11 +73,13 @@ func resolveModel(choice string) (string, error) {
 		return path, nil
 	}
 
-	return downloadModel(info, path)
+	return downloadModel(info, path, verbose)
 }
 
-func downloadModel(info ModelInfo, dest string) (string, error) {
-	fmt.Fprintf(os.Stderr, "Downloading %s (%s)...\n", info.Name, humanSize(info.Size))
+func downloadModel(info ModelInfo, dest string, verbose bool) (string, error) {
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Downloading %s (%s)...\n", info.Name, humanSize(info.Size))
+	}
 
 	tmp := dest + ".tmp"
 	defer os.Remove(tmp)
@@ -113,7 +115,9 @@ func downloadModel(info ModelInfo, dest string) (string, error) {
 		return "", fmt.Errorf("checksum mismatch: got %s, want %s", got, info.SHA256)
 	}
 
-	fmt.Fprintf(os.Stderr, "Downloaded %s (%s, %d bytes)\n", info.Name, humanSize(n), n)
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Downloaded %s (%s, %d bytes)\n", info.Name, humanSize(n), n)
+	}
 	if err := os.Rename(tmp, dest); err != nil {
 		return "", err
 	}

@@ -41,7 +41,12 @@ func main() {
 	if *verbose {
 		llama.SetLogLevel(1)
 	} else {
-		llama.SetLogLevel(3)
+		llama.SetLogLevel(6)
+	}
+	verbosef := func(format string, args ...interface{}) {
+		if *verbose {
+			fmt.Fprintf(os.Stderr, format, args...)
+		}
 	}
 
 	args := flag.Args()
@@ -77,13 +82,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	modelPath, err := resolveModel(*modelChoice)
+	modelPath, err := resolveModel(*modelChoice, *verbose)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "Loading model (%s)...\n", *modelChoice)
+	verbosef("Loading model (%s)...\n", *modelChoice)
 	start := time.Now()
 	m, err := llama.Load(modelPath, *nCtx, *nThreads, -1)
 	if err != nil {
@@ -91,7 +96,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer m.Free()
-	fmt.Fprintf(os.Stderr, "Model loaded in %v\n", time.Since(start))
+	verbosef("Model loaded in %v\n", time.Since(start))
 
 	var grammar string
 	if !*noGrammar {
@@ -151,8 +156,8 @@ func main() {
 			return err
 		}
 		chunkNumber++
-		fmt.Fprintf(os.Stderr, "Processing chunk %d (%d bytes)...\n", chunkNumber, len(chunk))
-		raw, generated, hitLimit, err := generateOne(m, schema, chunk, *maxTokens, *nCtx, eos)
+		verbosef("Processing chunk %d (%d bytes)...\n", chunkNumber, len(chunk))
+		raw, generated, hitLimit, err := generateOne(m, schema, chunk, *maxTokens, *nCtx, eos, *verbose)
 		totalGenerated += generated
 		if err != nil {
 			if errors.Is(err, errPromptTooLong) {
@@ -213,7 +218,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		raw, generated, _, err := generateOne(m, schema, input, *maxTokens, *nCtx, eos)
+		raw, generated, _, err := generateOne(m, schema, input, *maxTokens, *nCtx, eos, *verbose)
 		totalGenerated += generated
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -232,7 +237,7 @@ func main() {
 	}
 
 	if totalGenerated > 0 {
-		fmt.Fprintf(os.Stderr, "Generated %d tokens in %v (%.1f tok/s)\n",
+		verbosef("Generated %d tokens in %v (%.1f tok/s)\n",
 			totalGenerated, time.Since(genStart), float64(totalGenerated)/time.Since(genStart).Seconds())
 	}
 
@@ -252,7 +257,7 @@ func main() {
 			finalParsed = dedupByPK(arr, effectivePK)
 			after := len(finalParsed.([]interface{}))
 			if after < before {
-				fmt.Fprintf(os.Stderr, "Deduplicated %d -> %d records by %q\n", before, after, effectivePK)
+				verbosef("Deduplicated %d -> %d records by %q\n", before, after, effectivePK)
 			}
 		}
 	}
@@ -276,7 +281,7 @@ func main() {
 	fmt.Println(string(out))
 }
 
-func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32) (string, int, bool, error) {
+func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32, verbose bool) (string, int, bool, error) {
 	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
 
 	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
@@ -292,7 +297,9 @@ func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 	if err != nil {
 		return "", 0, false, fmt.Errorf("tokenize: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "Prompt: %d tokens\n", len(tokens))
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Prompt: %d tokens\n", len(tokens))
+	}
 	if len(tokens)+maxTokens > nCtx {
 		return "", 0, false, fmt.Errorf("%w: prompt %d + generation %d > context %d", errPromptTooLong, len(tokens), maxTokens, nCtx)
 	}
