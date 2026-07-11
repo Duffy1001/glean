@@ -198,7 +198,7 @@ func main() {
 		}
 	}
 
-	if err := validator.Validate(mustMarshal(finalParsed)); err != nil {
+	if err := validator.Validate(string(mustMarshal(finalParsed))); err != nil {
 		fmt.Fprintf(os.Stderr, "Validation error: %v\n", err)
 		os.Exit(1)
 	}
