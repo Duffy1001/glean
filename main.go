@@ -103,7 +103,9 @@ func main() {
 
 	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
 
-	userMsg := "Extract structured data as JSON.\n\nSchema:\n" + schema + "\n\nInput:\n" + input
+	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
+		"When the schema defines an array, extract ALL matching items from the input, not just the first.\n\n" +
+		"Schema:\n" + schema + "\n\nInput:\n" + input
 
 	prompt, err := m.ChatApplyTemplate(systemMsg, userMsg, true)
 	if err != nil {

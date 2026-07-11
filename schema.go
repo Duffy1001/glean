@@ -39,10 +39,14 @@ func buildSchemaFromFields(fields string) string {
 		props[f] = map[string]string{"type": "string"}
 		required = append(required, f)
 	}
-	schema := map[string]interface{}{
+	itemSchema := map[string]interface{}{
 		"type":       "object",
 		"properties": props,
 		"required":   required,
+	}
+	schema := map[string]interface{}{
+		"type":  "array",
+		"items": itemSchema,
 	}
 	b, _ := json.MarshalIndent(schema, "", "  ")
 	return string(b)

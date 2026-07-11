@@ -12,12 +12,20 @@ func TestBuildSchemaFromFields(t *testing.T) {
 		t.Fatalf("schema invalid: %v", err)
 	}
 
-	if err := v.Validate(`{"name":"Alice","age":"30","email":"alice@test.com"}`); err != nil {
-		t.Errorf("valid data rejected: %v", err)
+	if err := v.Validate(`[{"name":"Alice","age":"30","email":"alice@test.com"}]`); err != nil {
+		t.Errorf("valid array rejected: %v", err)
 	}
 
-	if err := v.Validate(`{"name":"Alice"}`); err == nil {
-		t.Error("missing required fields should fail validation")
+	if err := v.Validate(`[{"name":"Alice","age":"30","email":"alice@test.com"},{"name":"Bob","age":"25","email":"bob@test.com"}]`); err != nil {
+		t.Errorf("multi-item array rejected: %v", err)
+	}
+
+	if err := v.Validate(`[{"name":"Alice"}]`); err == nil {
+		t.Error("item missing required fields should fail validation")
+	}
+
+	if err := v.Validate(`{"name":"Alice","age":"30","email":"alice@test.com"}`); err == nil {
+		t.Error("object instead of array should fail validation")
 	}
 }
 
@@ -27,8 +35,8 @@ func TestBuildSchemaFromFieldsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema invalid: %v", err)
 	}
-	if err := v.Validate(`{}`); err != nil {
-		t.Errorf("empty object should be valid for empty schema: %v", err)
+	if err := v.Validate(`[]`); err != nil {
+		t.Errorf("empty array should be valid for empty schema: %v", err)
 	}
 }
 
@@ -39,7 +47,7 @@ func TestBuildSchemaFromFieldsWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema invalid: %v", err)
 	}
-	if err := v.Validate(`{"foo":"1","bar":"2"}`); err != nil {
+	if err := v.Validate(`[{"foo":"1","bar":"2"}]`); err != nil {
 		t.Errorf("whitespace handling failed: %v", err)
 	}
 }
