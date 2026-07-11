@@ -1,0 +1,113 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install build deps (Linux)
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake build-essential
+
+      - name: Install build deps (macOS)
+        if: matrix.goos == 'darwin'
+        run: brew install cmake
+
+      - name: Install build deps (Windows)
+        if: matrix.goos == 'windows'
+        run: choco install cmake -y --installargs 'ADD_CMAKE_TO_PATH=System'
+
+      - name: Configure llama.cpp
+        shell: bash
+        run: |
+          cmake -S llama.cpp -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_CURL=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGGML_OPENMP=OFF
+
+      - name: Build llama.cpp
+        shell: bash
+        run: cmake --build build --config Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) -- llama common ggml
+
+      - name: Build C++ bridge
+        shell: bash
+        run: |
+          CXX=$(which c++ g++ clang++ 2>/dev/null | head -1)
+          "$CXX" -c -O2 -std=c++17 \
+            -I"$PWD/llama.cpp/include" \
+            -I"$PWD/llama.cpp/common" \
+            -I"$PWD/llama.cpp/ggml/include" \
+            -I"$PWD/llama.cpp/vendor" \
+            cbridge/schema_bridge.cpp -o cbridge/schema_bridge.o
+
+      - name: Build Go binary (Linux static)
+        if: matrix.goos == 'linux'
+        run: |
+          CGO_ENABLED=1 go build -ldflags '-s -w -extldflags=-static' -tags 'osusergo netgo' -o jsonify .
+
+      - name: Build Go binary (macOS/Windows)
+        if: matrix.goos != 'linux'
+        shell: bash
+        run: CGO_ENABLED=1 go build -ldflags '-s -w' -o jsonify .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsonify-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: jsonify*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*/jsonify*

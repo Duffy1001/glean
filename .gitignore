@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+*.o
+*.obj
+
+# Compiled binaries
+jsonify
+jsonify-static
+jsonify.exe
+
+# Vendored llama.cpp source (clone via: make setup)
+llama.cpp/
+
+# Downloaded models
+models/
+
+# OS/editor cruft
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Go workspace
+vendor/
