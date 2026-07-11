@@ -89,8 +89,12 @@ func (m *Model) Decode(tokens []int32) error {
 }
 
 func (m *Model) SampleNext() int32 {
-	C.glean_synchronize(m.ptr)
-	return int32(C.glean_sample_next(m.ptr))
+	C.jsonify_synchronize(m.ptr)
+	return int32(C.jsonify_sample_next(m.ptr))
+}
+
+func (m *Model) ClearContext() {
+	C.jsonify_clear_context(m.ptr)
 }
 
 func (m *Model) AcceptToken(token int32) {

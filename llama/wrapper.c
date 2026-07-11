@@ -84,6 +84,10 @@ void glean_synchronize(glean_model_t * m) {
     llama_synchronize(m->ctx);
 }
 
+void glean_clear_context(glean_model_t * m) {
+    llama_memory_clear(llama_get_memory(m->ctx), true);
+}
+
 int32_t glean_sample_next(glean_model_t * m) {
     int32_t n_vocab = m->n_vocab;
 

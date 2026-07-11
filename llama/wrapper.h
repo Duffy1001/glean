@@ -34,6 +34,9 @@ int32_t glean_decode(glean_model_t * m, const int32_t * tokens, int32_t n_tokens
 // Synchronize (must be called before sampling after decode).
 void glean_synchronize(glean_model_t * m);
 
+// Clear the context's KV cache for reuse between independent prompts.
+void glean_clear_context(glean_model_t * m);
+
 // Sample next token using the configured sampler chain.
 // Returns the sampled token id. Handles grammar masking internally.
 int32_t glean_sample_next(glean_model_t * m);

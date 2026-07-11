@@ -12,6 +12,12 @@ import (
 	"github.com/duffy1001/glean/llama"
 )
 
+const (
+	promptOverheadTokens = 400
+	charsPerToken        = 3.5
+	overlapLines         = 3
+)
+
 func main() {
 	schemaFile := flag.String("schema", "", "JSON Schema file for constrained output")
 	fields := flag.String("fields", "", "Comma-separated field names for simple schema")
@@ -115,37 +121,128 @@ func main() {
 		}
 	}
 
+	eos := m.TokenEOS()
+
+	inputBudget := *nCtx - promptOverheadTokens - *maxTokens
+	inputCharsBudget := int(float64(inputBudget) * charsPerToken)
+
+	chunks := chunkInput(input, inputCharsBudget)
+	totalChunks := len(chunks)
+
+	var allResults []json.RawMessage
+	totalGenerated := 0
+	genStart := time.Now()
+
+	for ci, chunk := range chunks {
+		if totalChunks > 1 {
+			fmt.Fprintf(os.Stderr, "Processing chunk %d/%d (%d bytes)...\n", ci+1, totalChunks, len(chunk))
+		}
+
+		raw, generated, err := generateOne(m, schema, chunk, *maxTokens, eos)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Chunk %d error: %v\n", ci+1, err)
+			continue
+		}
+		totalGenerated += generated
+
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			fmt.Fprintf(os.Stderr, "Chunk %d: invalid JSON: %v\n", ci+1, err)
+			continue
+		}
+
+		switch v := parsed.(type) {
+		case []interface{}:
+			for _, item := range v {
+				b, _ := json.Marshal(item)
+				allResults = append(allResults, b)
+			}
+		case map[string]interface{}:
+			allResults = append(allResults, json.RawMessage(raw))
+		}
+
+		if totalChunks > 1 && ci < totalChunks-1 {
+			m.ClearContext()
+			if !*noGrammar {
+				gbnf, _ := jsonSchemaToGBNF(schema)
+				m.SetGrammar(gbnf, "root")
+			}
+		}
+	}
+
+	if totalGenerated > 0 {
+		fmt.Fprintf(os.Stderr, "Generated %d tokens in %v (%.1f tok/s)\n",
+			totalGenerated, time.Since(genStart), float64(totalGenerated)/time.Since(genStart).Seconds())
+	}
+
+	if len(allResults) == 0 {
+		fmt.Fprintf(os.Stderr, "No output generated\n")
+		os.Exit(1)
+	}
+
+	var finalParsed interface{}
+	if len(allResults) == 1 {
+		json.Unmarshal(allResults[0], &finalParsed)
+	} else {
+		finalParsed = allResults
+	}
+
+	if effectivePK != "" {
+		if arr, ok := finalParsed.([]interface{}); ok {
+			before := len(arr)
+			finalParsed = dedupByPK(arr, effectivePK)
+			after := len(finalParsed.([]interface{}))
+			if after < before {
+				fmt.Fprintf(os.Stderr, "Deduplicated %d -> %d records by %q\n", before, after, effectivePK)
+			}
+		}
+	}
+
+	if err := validator.Validate(mustMarshal(finalParsed)); err != nil {
+		fmt.Fprintf(os.Stderr, "Validation error: %v\n", err)
+		os.Exit(1)
+	}
+
+	var out []byte
+	if *compact {
+		out, err = json.Marshal(finalParsed)
+	} else {
+		out, err = json.MarshalIndent(finalParsed, "", "  ")
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "JSON marshal error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(string(out))
+}
+
+func generateOne(m *llama.Model, schema, chunkInput string, maxTokens int, eos int32) (string, int, error) {
 	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
 
 	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
 		"When the schema defines an array, extract ALL matching items from the input, not just the first.\n\n" +
-		"Schema:\n" + schema + "\n\nInput:\n" + input
+		"Schema:\n" + schema + "\n\nInput:\n" + chunkInput
 
 	prompt, err := m.ChatApplyTemplate(systemMsg, userMsg, true)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Chat template error: %v\n", err)
-		os.Exit(1)
+		return "", 0, fmt.Errorf("chat template: %w", err)
 	}
-
-	eos := m.TokenEOS()
 
 	tokens, err := m.Tokenize(prompt, false, true)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Tokenize error: %v\n", err)
-		os.Exit(1)
+		return "", 0, fmt.Errorf("tokenize: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Prompt: %d tokens\n", len(tokens))
 
 	if err := m.Decode(tokens); err != nil {
-		fmt.Fprintf(os.Stderr, "Decode error: %v\n", err)
-		os.Exit(1)
+		return "", 0, fmt.Errorf("decode prompt: %w", err)
 	}
 
 	var result strings.Builder
 	generated := 0
-	genStart := time.Now()
 
-	for i := 0; i < *maxTokens; i++ {
+	for i := 0; i < maxTokens; i++ {
 		tok := m.SampleNext()
 
 		if tok == eos {
@@ -159,54 +256,62 @@ func main() {
 
 		tokBatch := []int32{tok}
 		if err := m.Decode(tokBatch); err != nil {
-			fmt.Fprintf(os.Stderr, "Decode error at step %d: %v\n", i, err)
-			os.Exit(1)
+			return "", generated, fmt.Errorf("decode step %d: %w", i, err)
 		}
-	}
-
-	if generated > 0 {
-		fmt.Fprintf(os.Stderr, "Generated %d tokens in %v (%.1f tok/s)\n",
-			generated, time.Since(genStart), float64(generated)/time.Since(genStart).Seconds())
 	}
 
 	raw := strings.TrimSpace(result.String())
 	if raw == "" {
-		fmt.Fprintf(os.Stderr, "No output generated\n")
-		os.Exit(1)
+		return "", generated, fmt.Errorf("empty output")
 	}
 
-	if err := validator.Validate(raw); err != nil {
-		fmt.Fprintf(os.Stderr, "Validation error: %v\nRaw output: %s\n", err, raw)
-		os.Exit(1)
+	return raw, generated, nil
+}
+
+func chunkInput(input string, charBudget int) []string {
+	lines := strings.Split(input, "\n")
+
+	if estimateChars(input) <= charBudget {
+		return []string{input}
 	}
 
-	var parsed interface{}
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid JSON output: %v\nRaw: %s\n", err, raw)
-		os.Exit(1)
-	}
+	var chunks []string
+	var current []string
+	currentLen := 0
 
-	if effectivePK != "" {
-		if arr, ok := parsed.([]interface{}); ok {
-			before := len(arr)
-			parsed = dedupByPK(arr, effectivePK)
-			after := len(parsed.([]interface{}))
-			if after < before {
-				fmt.Fprintf(os.Stderr, "Deduplicated %d -> %d records by %q\n", before, after, effectivePK)
+	for _, line := range lines {
+		lineLen := len(line) + 1
+
+		if currentLen+lineLen > charBudget && len(current) > 0 {
+			chunks = append(chunks, strings.Join(current, "\n"))
+
+			overlap := overlapLines
+			if overlap > len(current) {
+				overlap = len(current)
+			}
+			current = current[len(current)-overlap:]
+			currentLen = 0
+			for _, l := range current {
+				currentLen += len(l) + 1
 			}
 		}
+
+		current = append(current, line)
+		currentLen += lineLen
 	}
 
-	var out []byte
-	if *compact {
-		out, err = json.Marshal(parsed)
-	} else {
-		out, err = json.MarshalIndent(parsed, "", "  ")
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "JSON marshal error: %v\n", err)
-		os.Exit(1)
+	if len(current) > 0 {
+		chunks = append(chunks, strings.Join(current, "\n"))
 	}
 
-	fmt.Println(string(out))
+	return chunks
+}
+
+func estimateChars(s string) int {
+	return len(s)
+}
+
+func mustMarshal(v interface{}) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }
