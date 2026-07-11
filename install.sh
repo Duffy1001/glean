@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="duffy/glean"
+REPO="duffy1001/glean"
 INSTALL_DIR="${GLEAN_INSTALL_DIR:-${HOME}/.local/bin}"
 
 uname_s=$(uname -s)

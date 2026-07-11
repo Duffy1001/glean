@@ -1,4 +1,4 @@
-module github.com/duffy/glean
+module github.com/duffy1001/glean
 
 go 1.26.4
 

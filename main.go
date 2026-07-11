@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duffy/glean/llama"
+	"github.com/duffy1001/glean/llama"
 )
 
 func main() {
@@ -22,6 +22,7 @@ func main() {
 	nCtx := flag.Int("ctx", 2048, "Context window size")
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	verbose := flag.Bool("verbose", false, "Show llama.cpp debug output")
+	pkField := flag.String("pk", "", "Primary key field for dedup/merge (default: first field with --fields)")
 	flag.Parse()
 
 	if *verbose {
@@ -56,6 +57,7 @@ func main() {
 	}
 
 	schema := defaultSchema
+	usingFields := false
 	if *schemaFile != "" {
 		data, err := os.ReadFile(*schemaFile)
 		if err != nil {
@@ -65,6 +67,18 @@ func main() {
 		schema = string(data)
 	} else if *fields != "" {
 		schema = buildSchemaFromFields(*fields)
+		usingFields = true
+	}
+
+	effectivePK := *pkField
+	if effectivePK == "" && usingFields {
+		for _, f := range strings.Split(*fields, ",") {
+			f = strings.TrimSpace(f)
+			if f != "" {
+				effectivePK = f
+				break
+			}
+		}
 	}
 
 	validator, err := NewSchemaValidator(schema)
@@ -170,6 +184,17 @@ func main() {
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		fmt.Fprintf(os.Stderr, "Invalid JSON output: %v\nRaw: %s\n", err, raw)
 		os.Exit(1)
+	}
+
+	if effectivePK != "" {
+		if arr, ok := parsed.([]interface{}); ok {
+			before := len(arr)
+			parsed = dedupByPK(arr, effectivePK)
+			after := len(parsed.([]interface{}))
+			if after < before {
+				fmt.Fprintf(os.Stderr, "Deduplicated %d -> %d records by %q\n", before, after, effectivePK)
+			}
+		}
 	}
 
 	var out []byte

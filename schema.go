@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duffy/glean/llama"
+	"github.com/duffy1001/glean/llama"
 )
 
 var defaultSchema = `{
