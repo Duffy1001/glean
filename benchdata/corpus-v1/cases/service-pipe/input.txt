@@ -1,0 +1,1 @@
+cache-01 is up||cache-02 is down

@@ -1,0 +1,11 @@
+{
+  "id": "service-pipe",
+  "description": "Extract ordered host status records from a multi-character delimiter stream.",
+  "tier": "conformance",
+  "tags": ["array", "custom-delimiter", "identifier"],
+  "delimiter": "||",
+  "identity_fields": ["host"],
+  "comparison": "ordered",
+  "allow_additional_fields": false,
+  "normalizers": {}
+}

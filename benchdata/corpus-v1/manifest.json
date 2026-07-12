@@ -1,5 +1,5 @@
 {
   "version": 1,
   "model": "fast",
-  "cases": ["people-basic", "service-status", "typed-incident"]
+  "cases": ["people-basic", "service-status", "typed-incident", "service-pipe", "repeated-records"]
 }

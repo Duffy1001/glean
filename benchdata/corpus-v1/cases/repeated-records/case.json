@@ -1,0 +1,11 @@
+{
+  "id": "repeated-records",
+  "description": "Preserve repeated-looking source records without deduplication.",
+  "tier": "conformance",
+  "tags": ["array", "duplicate", "newline"],
+  "delimiter": "\n",
+  "identity_fields": [],
+  "comparison": "positional",
+  "allow_additional_fields": false,
+  "normalizers": {}
+}
