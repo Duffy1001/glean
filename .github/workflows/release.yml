@@ -141,6 +141,8 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
+          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
+          go version
           mkdir -p dist
           CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -o dist/glean-thin-fast-windows-amd64.exe .
           CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags high -o dist/glean-thin-high-windows-amd64.exe .
