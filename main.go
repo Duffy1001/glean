@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,10 +19,6 @@ import (
 const (
 	promptOverheadTokens = 600
 	charsPerInputToken   = 3.0
-	tokensPerOutputRec   = 35
-	charsPerInputRec     = 80
-	overlapLines         = 3
-	safetyFactor         = 0.85
 )
 
 var errPromptTooLong = errors.New("prompt exceeds context budget")
@@ -34,12 +31,11 @@ func main() {
 	compact := flag.Bool("compact", false, "Output compact JSON")
 	nThreads := flag.Int("threads", 4, "CPU threads")
 	nCtx := flag.Int("ctx", 8192, "Context window size")
-	chunkLines := flag.Int("chunk-lines", 4, "Maximum input lines per array extraction chunk (0 disables)")
+	delimiter := flag.String("delimiter", "\\n", "Record delimiter for array extraction (supports \\n, \\t, and \\0)")
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	verbose := flag.Bool("verbose", false, "Show llama.cpp debug output")
 	device := flag.String("device", "auto", "Inference device: auto, cpu, or gpu")
 	gpuLayers := flag.Int("gpu-layers", -1, "Model layers to offload (-1 means all available)")
-	pkField := flag.String("pk", "", "Primary key field for dedup/merge (default: first field with --fields)")
 	showVersion := flag.Bool("version", false, "Show version and build edition")
 	showReport := flag.Bool("report", false, "Report available inference backends and devices as JSON")
 	flag.Parse()
@@ -133,8 +129,6 @@ func main() {
 		schema = buildSchemaFromFields(*fields)
 	}
 
-	effectivePK := *pkField
-
 	validator, err := NewSchemaValidator(schema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Schema error: %v\n", err)
@@ -172,18 +166,18 @@ func main() {
 
 	eos := m.TokenEOS()
 
-	maxRecordsByContext := float64(*nCtx-promptOverheadTokens) / (float64(charsPerInputRec)/charsPerInputToken + float64(tokensPerOutputRec))
-	maxRecordsByTokens := float64(*maxTokens) / float64(tokensPerOutputRec)
-	maxRecords := int(maxRecordsByContext)
-	if int(maxRecordsByTokens) < maxRecords {
-		maxRecords = int(maxRecordsByTokens)
+	delim, err := decodeDelimiter(*delimiter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Delimiter error: %v\n", err)
+		os.Exit(1)
 	}
-	if maxRecords < 1 {
-		maxRecords = 1
+	inputBudget := *nCtx - promptOverheadTokens - *maxTokens
+	if inputBudget < 1 {
+		fmt.Fprintln(os.Stderr, "Context is too small for the requested max-tokens")
+		os.Exit(1)
 	}
-	inputCharsBudget := int(float64(maxRecords*charsPerInputRec) * safetyFactor)
+	inputCharsBudget := int(float64(inputBudget) * charsPerInputToken)
 
-	var allResults []interface{}
 	totalGenerated := 0
 	genStart := time.Now()
 	needsReset := false
@@ -206,6 +200,31 @@ func main() {
 	}
 
 	var processArrayChunk func(string) error
+	arrayStarted := false
+	arrayItems := 0
+	writeArrayItem := func(item interface{}) error {
+		if !arrayStarted {
+			fmt.Print("[")
+			arrayStarted = true
+		}
+		if arrayItems > 0 {
+			fmt.Print(",")
+		}
+		var data []byte
+		var marshalErr error
+		if *compact {
+			data, marshalErr = json.Marshal(item)
+		} else {
+			data, marshalErr = json.MarshalIndent(item, "", "  ")
+		}
+		if marshalErr != nil {
+			return marshalErr
+		}
+		fmt.Print(string(data))
+		arrayItems++
+		return nil
+	}
+
 	processArrayChunk = func(chunk string) error {
 		chunk = strings.TrimSpace(chunk)
 		if chunk == "" {
@@ -247,17 +266,17 @@ func main() {
 		if err := validator.Validate(raw); err != nil {
 			return fmt.Errorf("chunk %d validation: %w", chunkNumber, err)
 		}
-		allResults = append(allResults, parsed...)
+		for _, item := range parsed {
+			if err := writeArrayItem(item); err != nil {
+				return fmt.Errorf("chunk %d output: %w", chunkNumber, err)
+			}
+		}
 		return nil
 	}
 
 	arraySchema := schemaHasRootType(schema, "array")
 	if arraySchema {
-		overlap := 0
-		if effectivePK != "" {
-			overlap = overlapLines
-		}
-		hadInput, err := streamSources(args, inputCharsBudget, *chunkLines, overlap, processArrayChunk)
+		hadInput, err := streamSources(args, inputCharsBudget, delim, processArrayChunk)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -266,6 +285,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "No input provided")
 			os.Exit(1)
 		}
+		if !arrayStarted {
+			fmt.Print("[]")
+		} else {
+			fmt.Print("]")
+		}
+		fmt.Println()
 	} else {
 		input, err := readSources(args)
 		if err != nil {
@@ -296,7 +321,17 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Invalid JSON output: %v\n", err)
 			os.Exit(1)
 		}
-		allResults = append(allResults, parsed)
+		var out []byte
+		if *compact {
+			out, err = json.Marshal(parsed)
+		} else {
+			out, err = json.MarshalIndent(parsed, "", "  ")
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "JSON marshal error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(out))
 	}
 
 	if totalGenerated > 0 {
@@ -304,44 +339,6 @@ func main() {
 			totalGenerated, time.Since(genStart), float64(totalGenerated)/time.Since(genStart).Seconds())
 	}
 
-	if len(allResults) == 0 && !arraySchema {
-		fmt.Fprintf(os.Stderr, "No output generated\n")
-		os.Exit(1)
-	}
-
-	var finalParsed interface{} = allResults
-	if !arraySchema {
-		finalParsed = allResults[0]
-	}
-
-	if effectivePK != "" {
-		if arr, ok := finalParsed.([]interface{}); ok {
-			before := len(arr)
-			finalParsed = dedupByPK(arr, effectivePK)
-			after := len(finalParsed.([]interface{}))
-			if after < before {
-				verbosef("Deduplicated %d -> %d records by %q\n", before, after, effectivePK)
-			}
-		}
-	}
-
-	if err := validator.Validate(string(mustMarshal(finalParsed))); err != nil {
-		fmt.Fprintf(os.Stderr, "Validation error: %v\n", err)
-		os.Exit(1)
-	}
-
-	var out []byte
-	if *compact {
-		out, err = json.Marshal(finalParsed)
-	} else {
-		out, err = json.MarshalIndent(finalParsed, "", "  ")
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "JSON marshal error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println(string(out))
 }
 
 func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32, verbose bool) (string, int, bool, error) {
@@ -402,9 +399,9 @@ func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 	return raw, generated, generated == maxTokens, nil
 }
 
-func streamSources(paths []string, byteBudget, maxLines, overlap int, yield func(string) error) (bool, error) {
+func streamSources(paths []string, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
 	if len(paths) == 0 {
-		return streamReaderChunks(os.Stdin, byteBudget, maxLines, overlap, yield)
+		return streamReaderChunks(os.Stdin, byteBudget, delimiter, yield)
 	}
 
 	hadInput := false
@@ -413,7 +410,7 @@ func streamSources(paths []string, byteBudget, maxLines, overlap int, yield func
 		if err != nil {
 			return hadInput, fmt.Errorf("read %s: %w", path, err)
 		}
-		hadFileInput, readErr := streamReaderChunks(f, byteBudget, maxLines, overlap, yield)
+		hadFileInput, readErr := streamReaderChunks(f, byteBudget, delimiter, yield)
 		closeErr := f.Close()
 		hadInput = hadInput || hadFileInput
 		if readErr != nil {
@@ -426,63 +423,93 @@ func streamSources(paths []string, byteBudget, maxLines, overlap int, yield func
 	return hadInput, nil
 }
 
-func streamReaderChunks(r io.Reader, byteBudget, maxLines, overlap int, yield func(string) error) (bool, error) {
-	reader := bufio.NewReader(r)
-	var lines []string
+func streamReaderChunks(r io.Reader, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+	scanner.Split(splitDelimiter([]byte(delimiter)))
+	var records []string
 	currentBytes := 0
 	hadInput := false
 
 	emit := func() error {
-		if len(lines) == 0 {
+		if len(records) == 0 {
 			return nil
 		}
-		chunk := strings.Join(lines, "")
+		chunk := strings.Join(records, delimiter)
 		if strings.TrimSpace(chunk) != "" {
 			hadInput = true
 			if err := yield(chunk); err != nil {
 				return err
 			}
 		}
-		keep := overlap
-		if keep > len(lines) {
-			keep = len(lines)
-		}
-		lines = append([]string(nil), lines[len(lines)-keep:]...)
+		records = nil
 		currentBytes = 0
-		for _, line := range lines {
-			currentBytes += len(line)
-		}
 		return nil
 	}
 
-	for {
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			if len(lines) > 0 && (currentBytes+len(line) > byteBudget || (maxLines > 0 && len(lines) >= maxLines)) {
+	for scanner.Scan() {
+		record := scanner.Text()
+		if record != "" {
+			if len(records) > 0 && currentBytes+len(record) > byteBudget {
 				if emitErr := emit(); emitErr != nil {
 					return hadInput, emitErr
 				}
 			}
-			lines = append(lines, line)
-			currentBytes += len(line)
-		}
-		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				return hadInput, err
-			}
-			break
+			records = append(records, record)
+			currentBytes += len(record)
 		}
 	}
-	if len(lines) > 0 {
-		chunk := strings.Join(lines, "")
-		if strings.TrimSpace(chunk) != "" {
-			hadInput = true
-			if err := yield(chunk); err != nil {
-				return hadInput, err
-			}
-		}
+	if err := scanner.Err(); err != nil {
+		return hadInput, err
+	}
+	if err := emit(); err != nil {
+		return hadInput, err
 	}
 	return hadInput, nil
+}
+
+func splitDelimiter(delimiter []byte) bufio.SplitFunc {
+	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if index := bytes.Index(data, delimiter); index >= 0 {
+			return index + len(delimiter), data[:index], nil
+		}
+		if atEOF && len(data) > 0 {
+			return len(data), data, nil
+		}
+		return 0, nil, nil
+	}
+}
+
+func decodeDelimiter(value string) (string, error) {
+	var out strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' {
+			out.WriteByte(value[i])
+			continue
+		}
+		if i+1 >= len(value) {
+			return "", errors.New("trailing escape")
+		}
+		i++
+		switch value[i] {
+		case 'n':
+			out.WriteByte('\n')
+		case 't':
+			out.WriteByte('\t')
+		case '0':
+			out.WriteByte(0)
+		case 'r':
+			out.WriteByte('\r')
+		case '\\':
+			out.WriteByte('\\')
+		default:
+			return "", fmt.Errorf("unsupported escape \\%c", value[i])
+		}
+	}
+	if out.Len() == 0 {
+		return "", errors.New("delimiter cannot be empty")
+	}
+	return out.String(), nil
 }
 
 func readSources(paths []string) (string, error) {
@@ -536,9 +563,4 @@ func schemaHasRootType(schema, wanted string) bool {
 		}
 	}
 	return false
-}
-
-func mustMarshal(v interface{}) []byte {
-	b, _ := json.Marshal(v)
-	return b
 }

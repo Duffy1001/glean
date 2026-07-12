@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-func TestStreamReaderChunksPreservesInputWithOverlap(t *testing.T) {
+func TestStreamReaderChunksPreservesRecords(t *testing.T) {
 	input := "one\ntwo\nthree\nfour\nfive\nsix\nseven\n"
 	var chunks []string
-	hadInput, err := streamReaderChunks(strings.NewReader(input), 12, 0, overlapLines, func(chunk string) error {
+	hadInput, err := streamReaderChunks(strings.NewReader(input), 12, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -36,7 +36,7 @@ func TestStreamReaderChunksPreservesInputWithOverlap(t *testing.T) {
 }
 
 func TestStreamReaderChunksEmptyInput(t *testing.T) {
-	hadInput, err := streamReaderChunks(strings.NewReader(" \n\t"), 10, 0, 0, func(string) error {
+	hadInput, err := streamReaderChunks(strings.NewReader(" \n\t"), 10, "\n", func(string) error {
 		t.Fatal("callback should not be called")
 		return nil
 	})
@@ -48,9 +48,9 @@ func TestStreamReaderChunksEmptyInput(t *testing.T) {
 	}
 }
 
-func TestStreamReaderChunksRespectsLineLimit(t *testing.T) {
+func TestStreamReaderChunksRespectsByteLimit(t *testing.T) {
 	var chunks []string
-	_, err := streamReaderChunks(strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 100, 2, 0, func(chunk string) error {
+	_, err := streamReaderChunks(strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 8, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -60,7 +60,7 @@ func TestStreamReaderChunksRespectsLineLimit(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("expected 3 chunks, got %d", len(chunks))
 	}
-	if chunks[0] != "one\ntwo\n" || chunks[1] != "three\nfour\n" || chunks[2] != "five\n" {
+	if chunks[0] != "one\ntwo" || chunks[1] != "three" || chunks[2] != "four\nfive" {
 		t.Fatalf("unexpected chunks: %#v", chunks)
 	}
 }
@@ -81,5 +81,33 @@ func TestSchemaHasRootType(t *testing.T) {
 	}
 	if schemaHasRootType(`{"type":"object"}`, "array") {
 		t.Fatal("object schema detected as array")
+	}
+}
+
+func TestDecodeDelimiter(t *testing.T) {
+	got, err := decodeDelimiter(`\n`)
+	if err != nil || got != "\n" {
+		t.Fatalf("newline delimiter: %q, %v", got, err)
+	}
+	got, err = decodeDelimiter(`\0`)
+	if err != nil || got != "\x00" {
+		t.Fatalf("NUL delimiter: %q, %v", got, err)
+	}
+	if _, err := decodeDelimiter(``); err == nil {
+		t.Fatal("empty delimiter should fail")
+	}
+}
+
+func TestStreamReaderChunksUsesDelimiter(t *testing.T) {
+	var chunks []string
+	_, err := streamReaderChunks(strings.NewReader("one||two||three"), 7, "||", func(chunk string) error {
+		chunks = append(chunks, chunk)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 2 || chunks[0] != "one||two" || chunks[1] != "three" {
+		t.Fatalf("unexpected delimiter chunks: %#v", chunks)
 	}
 }

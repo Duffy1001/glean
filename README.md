@@ -55,22 +55,24 @@ Normalize a log stream:
 
 ```sh
 journalctl -o short-iso --no-pager |
-  glean --fields timestamp,service,message --pk timestamp --compact
+  glean --fields timestamp,service,message --delimiter '\\n' --compact
 ```
 
 Extract from files:
 
 ```sh
+glean --fields host,status logs/*.txt
 ```
 
 Use the built-in summary schema:
 
 ```sh
+glean incident-notes.txt
 ```
 
 The successful output is one JSON document on stdout. Normal progress is
 silent. Errors go to stderr. Use `--verbose` for model, backend, timing,
-chunking, and deduplication diagnostics.
+chunking diagnostics.
 
 ## Installation
 
@@ -132,6 +134,7 @@ For types, nested objects, enums, or stricter contracts, provide a JSON Schema:
 ```
 
 ```sh
+glean --schema people.schema.json people.txt
 ```
 
 The schema is used twice:
@@ -149,42 +152,25 @@ when correctness is important.
 
 ## Large Input
 
-Root-array schemas are processed incrementally. Input is split at line
-boundaries, each chunk is extracted and validated, and the arrays are merged
-before one final JSON document is printed.
-
-The default is four source lines per inference chunk:
+Root-array schemas are processed incrementally. Records are split using an
+explicit delimiter, packed into context-sized chunks, extracted, validated,
+and written as soon as each chunk completes.
 
 ```sh
 cat application.log |
-  glean --fields timestamp,level,message --chunk-lines 4
+  glean --fields timestamp,level,message --delimiter '\\n'
 ```
 
-Use one line per inference when row isolation matters more than throughput:
+Use NUL-delimited records when the source can contain newlines:
 
 ```sh
 command-with-one-record-per-line |
-  glean --fields id,value --chunk-lines 1
+  glean --delimiter '\\0' --fields id,value
 ```
 
-Use `--chunk-lines 0` to disable the line cap and allow the context-based
-chunker to choose larger chunks. Oversized or token-truncated chunks are split
-and retried.
-
-Use `--pk` only when repeated records should be merged:
-
-```sh
-journalctl -o short-iso --no-pager |
-  glean --fields timestamp,service,message --pk timestamp
-```
-
-Records with the same primary key preserve first-seen order. Later records add
-missing fields and overwrite conflicting values. Explicit `--pk` also enables
-a small chunk overlap to catch records near boundaries. Without `--pk`, chunks
-do not overlap and generated records are preserved as-is.
-
-Output is accumulated before printing because final validation and merging need
-the complete result. This is streaming input, not streaming JSON output.
+Oversized records are split and retried. Output is one JSON array, but its items
+are written incrementally. If a later chunk fails, the command exits nonzero
+and stdout may contain a partial JSON stream.
 
 ## Local Devices
 
@@ -197,12 +183,15 @@ GPU drivers and the Vulkan loader are optional system capabilities. If they are
 missing, `glean` continues on CPU. Inspect what the binary can see:
 
 ```sh
+glean --report
 ```
 
 By default, `--device auto` uses a detected GPU or integrated GPU. If no
 accelerator is available, it uses CPU. Force a mode when needed:
 
 ```sh
+glean --device gpu --fields name,status input.txt
+glean --device cpu --fields name,status input.txt
 ```
 
 Automatic GPU initialization failures retry on CPU. `--device gpu` is strict
@@ -252,11 +241,10 @@ Models are cached under:
 | --- | --- | --- |
 | `--schema FILE` | | JSON Schema used for generation and validation |
 | `--fields LIST` | | Comma-separated string fields for array extraction |
-| `--pk FIELD` | unset | Primary key used to merge array records |
 | `--model NAME` | `fast` | Supported model: `fast` |
 | `--max-tokens N` | `2048` | Maximum generated tokens per inference chunk |
 | `--ctx N` | `8192` | Model context window |
-| `--chunk-lines N` | `4` | Maximum source lines per array chunk; `1` isolates rows and `0` disables the cap |
+| `--delimiter STRING` | `\\n` | Record separator for array extraction |
 | `--threads N` | `4` | CPU inference threads |
 | `--device NAME` | `auto` | Device policy: `auto`, `cpu`, or `gpu` |
 | `--gpu-layers N` | `-1` | Layers to offload when GPU inference is selected |
