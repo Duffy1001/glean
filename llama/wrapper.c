@@ -52,6 +52,12 @@ glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_thr
     int32_t n_vocab = llama_vocab_n_tokens(vocab);
 
     glean_model_t * m = (glean_model_t *)calloc(1, sizeof(glean_model_t));
+    if (!m) {
+        llama_sampler_free(chain);
+        llama_free(ctx);
+        llama_model_free(model);
+        return NULL;
+    }
     m->model = model;
     m->ctx = ctx;
     m->chain = chain;
@@ -59,11 +65,21 @@ glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_thr
     m->vocab = vocab;
     m->n_vocab = n_vocab;
     m->n_ctx = (int32_t)llama_n_ctx(ctx);
+    m->token_data = (llama_token_data *)malloc(n_vocab * sizeof(llama_token_data));
+    if (!m->token_data) {
+        glean_free(m);
+        return NULL;
+    }
+    for (int32_t i = 0; i < n_vocab; i++) {
+        m->token_data[i].id = i;
+        m->token_data[i].p = 0.0f;
+    }
     return m;
 }
 
 void glean_free(glean_model_t * m) {
     if (!m) return;
+    free(m->token_data);
     if (m->grammar) llama_sampler_free(m->grammar);
     if (m->chain) llama_sampler_free(m->chain);
     if (m->ctx) llama_free(m->ctx);
@@ -96,12 +112,9 @@ int32_t glean_sample_next(glean_model_t * m) {
     // Get logits
     float * logits = llama_get_logits(m->ctx);
 
-    // Build token data array
-    llama_token_data * data = (llama_token_data *)malloc(n_vocab * sizeof(llama_token_data));
+    llama_token_data * data = m->token_data;
     for (int32_t i = 0; i < n_vocab; i++) {
-        data[i].id = i;
         data[i].logit = logits[i];
-        data[i].p = 0.0f;
     }
     llama_token_data_array cur_p = { data, (size_t)n_vocab, -1, false };
 
@@ -114,7 +127,6 @@ int32_t glean_sample_next(glean_model_t * m) {
     llama_sampler_apply(m->chain, &cur_p);
 
     llama_token id = cur_p.data[cur_p.selected].id;
-    free(data);
     return id;
 }
 

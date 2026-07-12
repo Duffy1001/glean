@@ -11,6 +11,7 @@ typedef struct {
     struct llama_sampler * chain;    // main sampler chain (greedy or temp+dist)
     struct llama_sampler * grammar;  // grammar sampler (NULL if no grammar)
     const struct llama_vocab * vocab;
+    llama_token_data * token_data;
     int32_t n_vocab;
     int32_t n_ctx;
 } glean_model_t;
