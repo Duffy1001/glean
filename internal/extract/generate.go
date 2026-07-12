@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,9 +10,12 @@ import (
 	"github.com/duffy1001/glean/llama"
 )
 
-var ErrPromptTooLong = errors.New("prompt exceeds context budget")
+var errPromptTooLong = errors.New("prompt exceeds context budget")
 
-func GenerateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32, verbose bool) (string, int, bool, error) {
+func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32, verbose bool) (string, int, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", 0, false, err
+	}
 	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
 
 	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
@@ -33,7 +37,7 @@ func GenerateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 		fmt.Fprintf(os.Stderr, "Prompt: %d tokens\n", len(tokens))
 	}
 	if len(tokens)+maxTokens > nCtx {
-		return "", 0, false, fmt.Errorf("%w: prompt %d + generation %d > context %d", ErrPromptTooLong, len(tokens), maxTokens, nCtx)
+		return "", 0, false, fmt.Errorf("%w: prompt %d + generation %d > context %d", errPromptTooLong, len(tokens), maxTokens, nCtx)
 	}
 
 	if err := m.Decode(tokens); err != nil {
@@ -44,6 +48,11 @@ func GenerateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 	generated := 0
 
 	for i := 0; i < maxTokens; i++ {
+		if i%16 == 0 {
+			if err := ctx.Err(); err != nil {
+				return "", generated, false, err
+			}
+		}
 		tok := m.SampleNext()
 
 		if tok == eos {

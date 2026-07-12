@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ func TestReadSourcesPreservesOrder(t *testing.T) {
 		{Name: "b", Reader: strings.NewReader("beta")},
 	}
 
-	got, err := ReadSources(sources)
+	got, err := readSources(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +27,7 @@ func TestReadSourcesPreservesOrder(t *testing.T) {
 }
 
 func TestReadSourcesEmpty(t *testing.T) {
-	got, err := ReadSources(nil)
+	got, err := readSources(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,7 @@ func TestStreamSourcesFileBoundaries(t *testing.T) {
 	}
 
 	var chunks []string
-	hadInput, err := StreamSources(sources, 100, "\n", func(chunk string) error {
+	hadInput, err := streamSources(context.Background(), sources, 100, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})

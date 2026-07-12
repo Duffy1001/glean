@@ -3,16 +3,17 @@ package extract
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
 
-func StreamReaderChunks(r io.Reader, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
+func streamReaderChunks(ctx context.Context, r io.Reader, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
-	scanner.Split(SplitDelimiter([]byte(delimiter)))
+	scanner.Split(splitDelimiter([]byte(delimiter)))
 	var records []string
 	currentBytes := 0
 	hadInput := false
@@ -34,6 +35,9 @@ func StreamReaderChunks(r io.Reader, byteBudget int, delimiter string, yield fun
 	}
 
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return hadInput, err
+		}
 		record := scanner.Text()
 		if record != "" {
 			if len(records) > 0 && currentBytes+len(record) > byteBudget {
@@ -54,10 +58,13 @@ func StreamReaderChunks(r io.Reader, byteBudget int, delimiter string, yield fun
 	return hadInput, nil
 }
 
-func StreamSources(sources []Source, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
+func streamSources(ctx context.Context, sources []Source, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
 	hadInput := false
 	for _, src := range sources {
-		hadFileInput, readErr := StreamReaderChunks(src.Reader, byteBudget, delimiter, yield)
+		if err := ctx.Err(); err != nil {
+			return hadInput, err
+		}
+		hadFileInput, readErr := streamReaderChunks(ctx, src.Reader, byteBudget, delimiter, yield)
 		hadInput = hadInput || hadFileInput
 		if readErr != nil {
 			return hadInput, fmt.Errorf("read %s: %w", src.Name, readErr)
@@ -66,7 +73,7 @@ func StreamSources(sources []Source, byteBudget int, delimiter string, yield fun
 	return hadInput, nil
 }
 
-func SplitDelimiter(delimiter []byte) bufio.SplitFunc {
+func splitDelimiter(delimiter []byte) bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if index := bytes.Index(data, delimiter); index >= 0 {
 			return index + len(delimiter), data[:index], nil
@@ -110,7 +117,7 @@ func DecodeDelimiter(value string) (string, error) {
 	return out.String(), nil
 }
 
-func ReadSources(sources []Source) (string, error) {
+func readSources(sources []Source) (string, error) {
 	var input strings.Builder
 	for _, src := range sources {
 		data, err := io.ReadAll(src.Reader)
@@ -123,7 +130,7 @@ func ReadSources(sources []Source) (string, error) {
 	return input.String(), nil
 }
 
-func SplitChunk(chunk, delimiter string) (string, string, bool) {
+func splitChunk(chunk, delimiter string) (string, string, bool) {
 	parts := strings.Split(chunk, delimiter)
 	if len(parts) > 1 {
 		mid := len(parts) / 2

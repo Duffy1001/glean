@@ -8,11 +8,11 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-type SchemaValidator struct {
+type schemaValidator struct {
 	schema *jsonschema.Schema
 }
 
-func NewSchemaValidator(schemaStr string) (*SchemaValidator, error) {
+func newSchemaValidator(schemaStr string) (*schemaValidator, error) {
 	var doc any
 	if err := json.Unmarshal([]byte(schemaStr), &doc); err != nil {
 		return nil, fmt.Errorf("invalid JSON Schema: %w", err)
@@ -28,10 +28,10 @@ func NewSchemaValidator(schemaStr string) (*SchemaValidator, error) {
 		return nil, fmt.Errorf("failed to compile schema: %w", err)
 	}
 
-	return &SchemaValidator{schema: schema}, nil
+	return &schemaValidator{schema: schema}, nil
 }
 
-func (v *SchemaValidator) Validate(jsonStr string) error {
+func (v *schemaValidator) validate(jsonStr string) error {
 	var data any
 	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)

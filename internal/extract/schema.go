@@ -8,6 +8,20 @@ import (
 	"github.com/duffy1001/glean/llama"
 )
 
+type rootKind uint8
+
+const (
+	rootObject rootKind = iota
+	rootArray
+)
+
+type preparedSchema struct {
+	raw       string
+	root      rootKind
+	validator *schemaValidator
+	grammar   string
+}
+
 var DefaultSchema = `{
   "type": "object",
   "properties": {
@@ -64,7 +78,7 @@ func BuildSchemaFromFields(fields string) (string, error) {
 	return string(b), nil
 }
 
-func SchemaHasRootType(schema, wanted string) bool {
+func schemaHasRootType(schema, wanted string) bool {
 	var doc map[string]interface{}
 	if err := json.Unmarshal([]byte(schema), &doc); err != nil {
 		return false
@@ -82,10 +96,29 @@ func SchemaHasRootType(schema, wanted string) bool {
 	return false
 }
 
-func JSONSchemaToGBNF(schemaStr string) (string, error) {
+func jsonSchemaToGBNF(schemaStr string) (string, error) {
 	gbnf, err := llama.SchemaToGrammar(schemaStr)
 	if err != nil {
 		return "", fmt.Errorf("schema conversion failed: %w", err)
 	}
 	return gbnf, nil
+}
+
+func prepareSchema(raw string, grammarEnabled bool) (*preparedSchema, error) {
+	validator, err := newSchemaValidator(raw)
+	if err != nil {
+		return nil, err
+	}
+	prepared := &preparedSchema{raw: raw, validator: validator, root: rootObject}
+	if schemaHasRootType(raw, "array") {
+		prepared.root = rootArray
+	}
+	if grammarEnabled {
+		grammar, err := jsonSchemaToGBNF(raw)
+		if err != nil {
+			return nil, err
+		}
+		prepared.grammar = grammar
+	}
+	return prepared, nil
 }

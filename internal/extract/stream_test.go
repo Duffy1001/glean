@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -8,7 +9,7 @@ import (
 func TestStreamReaderChunksPreservesRecords(t *testing.T) {
 	input := "one\ntwo\nthree\nfour\nfive\nsix\nseven\n"
 	var chunks []string
-	hadInput, err := StreamReaderChunks(strings.NewReader(input), 12, "\n", func(chunk string) error {
+	hadInput, err := streamReaderChunks(context.Background(), strings.NewReader(input), 12, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -36,7 +37,7 @@ func TestStreamReaderChunksPreservesRecords(t *testing.T) {
 }
 
 func TestStreamReaderChunksEmptyInput(t *testing.T) {
-	hadInput, err := StreamReaderChunks(strings.NewReader(" \n\t"), 10, "\n", func(string) error {
+	hadInput, err := streamReaderChunks(context.Background(), strings.NewReader(" \n\t"), 10, "\n", func(string) error {
 		t.Fatal("callback should not be called")
 		return nil
 	})
@@ -50,7 +51,7 @@ func TestStreamReaderChunksEmptyInput(t *testing.T) {
 
 func TestStreamReaderChunksRespectsByteLimit(t *testing.T) {
 	var chunks []string
-	_, err := StreamReaderChunks(strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 8, "\n", func(chunk string) error {
+	_, err := streamReaderChunks(context.Background(), strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 8, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -66,7 +67,7 @@ func TestStreamReaderChunksRespectsByteLimit(t *testing.T) {
 }
 
 func TestSplitChunk(t *testing.T) {
-	left, right, ok := SplitChunk("one||two||three||four", "||")
+	left, right, ok := splitChunk("one||two||three||four", "||")
 	if !ok {
 		t.Fatal("expected split")
 	}
@@ -76,7 +77,7 @@ func TestSplitChunk(t *testing.T) {
 }
 
 func TestSplitChunkFallsBackToRunes(t *testing.T) {
-	left, right, ok := SplitChunk("abcdef", "||")
+	left, right, ok := splitChunk("abcdef", "||")
 	if !ok {
 		t.Fatal("expected split")
 	}
@@ -86,10 +87,10 @@ func TestSplitChunkFallsBackToRunes(t *testing.T) {
 }
 
 func TestSchemaHasRootType(t *testing.T) {
-	if !SchemaHasRootType(`{"type":"array"}`, "array") {
+	if !schemaHasRootType(`{"type":"array"}`, "array") {
 		t.Fatal("array schema not detected")
 	}
-	if SchemaHasRootType(`{"type":"object"}`, "array") {
+	if schemaHasRootType(`{"type":"object"}`, "array") {
 		t.Fatal("object schema detected as array")
 	}
 }
@@ -109,9 +110,9 @@ func TestSchemaHasRootTypeVariants(t *testing.T) {
 		{`{"type":42}`, "array", false},
 	}
 	for _, tc := range tests {
-		got := SchemaHasRootType(tc.schema, tc.wanted)
+		got := schemaHasRootType(tc.schema, tc.wanted)
 		if got != tc.want {
-			t.Errorf("SchemaHasRootType(%q, %q) = %v, want %v", tc.schema, tc.wanted, got, tc.want)
+			t.Errorf("schemaHasRootType(%q, %q) = %v, want %v", tc.schema, tc.wanted, got, tc.want)
 		}
 	}
 }
@@ -161,7 +162,7 @@ func TestDecodeDelimiterTrailingEscape(t *testing.T) {
 
 func TestStreamReaderChunksUsesDelimiter(t *testing.T) {
 	var chunks []string
-	_, err := StreamReaderChunks(strings.NewReader("one||two||three"), 7, "||", func(chunk string) error {
+	_, err := streamReaderChunks(context.Background(), strings.NewReader("one||two||three"), 7, "||", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
