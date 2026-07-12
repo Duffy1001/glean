@@ -27,13 +27,6 @@ var modelRegistry = map[string]ModelInfo{
 		SHA256:   "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a",
 		Size:     396705472,
 	},
-	"quality": {
-		Name:     "qwen3-1.7b",
-		Filename: "qwen3-1.7b-q4_k_m.gguf",
-		URL:      "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
-		SHA256:   "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
-		Size:     1107409472,
-	},
 }
 
 func modelCacheDir() (string, error) {
@@ -57,7 +50,7 @@ func modelCacheDir() (string, error) {
 func resolveModel(choice string, verbose bool) (string, error) {
 	info, ok := modelRegistry[choice]
 	if !ok {
-		return "", fmt.Errorf("unknown model %q (available: fast, quality)", choice)
+		return "", fmt.Errorf("unknown model %q (available: fast)", choice)
 	}
 
 	cacheDir, err := modelCacheDir()

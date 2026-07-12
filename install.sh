@@ -3,16 +3,11 @@ set -eu
 
 repo="duffy1001/glean"
 variant="${GLEAN_VARIANT:-thin}"
-model="${GLEAN_MODEL:-fast}"
 force="${GLEAN_FORCE:-0}"
 
 case "$variant" in
     thin|full) ;;
     *) echo "GLEAN_VARIANT must be thin or full" >&2; exit 1 ;;
-esac
-case "$model" in
-    fast|high) ;;
-    *) echo "GLEAN_MODEL must be fast or high" >&2; exit 1 ;;
 esac
 
 case "$(uname -s)" in
@@ -58,12 +53,12 @@ case "$version" in
     *) echo "Could not determine latest release from ${latest_url}" >&2; exit 1 ;;
 esac
 
-asset="glean-${variant}-${model}-${os}-${arch}"
+asset="glean-${variant}-fast-${os}-${arch}"
 base="https://github.com/${repo}/releases/download/${version}"
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-echo "Downloading glean ${version} ${variant}-${model} (${os}/${arch})..." >&2
+echo "Downloading glean ${version} ${variant}-fast (${os}/${arch})..." >&2
 curl -fL --retry 3 -o "${tmp_dir}/${asset}" "${base}/${asset}"
 curl -fL --retry 3 -o "${tmp_dir}/checksums.txt" "${base}/checksums.txt"
 

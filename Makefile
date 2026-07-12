@@ -1,4 +1,4 @@
-.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-thin-fast build-thin-high build-full-fast build-full-high prepare-fast prepare-high prepare-models test static static-thin-fast static-thin-high static-full-fast static-full-high release
+.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-thin-fast build-full-fast prepare-fast test static static-thin-fast static-full-fast release
 
 LLAMA_DIR := llama.cpp
 BUILD_DIR := build
@@ -106,25 +106,12 @@ build-thin-fast: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
 	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-thin-fast .
 
-build-thin-high: build-llama build-bridge
-	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -tags high -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-thin-high .
-
 prepare-fast:
 	./scripts/prepare-embedded-model.sh fast
-
-prepare-high:
-	./scripts/prepare-embedded-model.sh high
-
-prepare-models: prepare-fast prepare-high
 
 build-full-fast: build-llama build-bridge prepare-fast
 	mkdir -p $(BIN_DIR)
 	CGO_ENABLED=1 go build -tags embedded -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-full-fast .
-
-build-full-high: build-llama build-bridge prepare-high
-	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -tags 'embedded high' -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-full-high .
 
 static: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
@@ -134,17 +121,9 @@ static-thin-fast: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
 	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-thin-fast-static .
 
-static-thin-high: build-llama build-bridge
-	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo high' -o $(BIN_DIR)/glean-thin-high-static .
-
 static-full-fast: build-llama build-bridge prepare-fast
 	mkdir -p $(BIN_DIR)
 	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo embedded' -o $(BIN_DIR)/glean-full-fast-static .
-
-static-full-high: build-llama build-bridge prepare-high
-	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo embedded high' -o $(BIN_DIR)/glean-full-high-static .
 
 test: build-llama build-bridge
 	go test -v ./...

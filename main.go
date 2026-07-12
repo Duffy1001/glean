@@ -29,7 +29,7 @@ var errPromptTooLong = errors.New("prompt exceeds context budget")
 func main() {
 	schemaFile := flag.String("schema", "", "JSON Schema file for constrained output")
 	fields := flag.String("fields", "", "Comma-separated field names for simple schema")
-	modelChoice := flag.String("model", defaultModel(), "Model: fast (0.6B) or quality (1.7B)")
+	modelChoice := flag.String("model", defaultModel(), "Model: fast (0.6B)")
 	maxTokens := flag.Int("max-tokens", 2048, "Maximum tokens to generate")
 	compact := flag.Bool("compact", false, "Output compact JSON")
 	nThreads := flag.Int("threads", 4, "CPU threads")
@@ -72,11 +72,11 @@ func main() {
 	if *showReport {
 		expectedAccelerator := "vulkan"
 		defaultDevice := "cpu"
+		if hasGPU {
+			defaultDevice = "gpu"
+		}
 		if runtime.GOOS == "darwin" {
 			expectedAccelerator = "metal"
-			if hasGPU {
-				defaultDevice = "gpu"
-			}
 		}
 		report := struct {
 			Version             string                `json:"version"`
@@ -100,7 +100,7 @@ func main() {
 
 	switch *device {
 	case "auto":
-		if runtime.GOOS != "darwin" || !hasGPU {
+		if !hasGPU {
 			*gpuLayers = 0
 		}
 	case "cpu":

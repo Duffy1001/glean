@@ -3,8 +3,8 @@ set -eu
 
 variant=${1:-all}
 case "$variant" in
-    thin-fast|thin-high|full-fast|full-high|all) ;;
-    *) echo "Usage: $0 [thin-fast|thin-high|full-fast|full-high|all]" >&2; exit 1 ;;
+    thin-fast|full-fast|all) ;;
+    *) echo "Usage: $0 [thin-fast|full-fast|all]" >&2; exit 1 ;;
 esac
 
 case "$(uname -s)" in
@@ -35,10 +35,8 @@ build_variant() {
 
 case "$variant" in
     thin-fast) build_variant thin fast ;;
-    thin-high) build_variant thin high ;;
     full-fast) build_variant full fast ;;
-    full-high) build_variant full high ;;
-    all) build_variant thin fast; build_variant thin high; build_variant full fast; build_variant full high ;;
+    all) build_variant thin fast; build_variant full fast ;;
 esac
 
 if command -v sha256sum >/dev/null 2>&1; then

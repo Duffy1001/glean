@@ -31,7 +31,7 @@ printf '%s\n' \
 - Final output validation against the original schema
 - Automatic chunking for streamed array extraction
 - Overlap-aware merging and primary-key deduplication
-- Two supported model choices for speed or quality
+- A small Qwen3 model tuned for fast local extraction
 - Pure JSON on stdout; optional diagnostics on stderr
 - Automatic backend discovery with safe CPU fallback
 
@@ -61,13 +61,10 @@ On Windows PowerShell:
 irm https://raw.githubusercontent.com/duffy1001/glean/master/install.ps1 | iex
 ```
 
-To install the full-high Windows edition, download `install.ps1` and invoke it
-with `-Variant full -Model high`.
-
 Thin editions download their default model on first use. Full editions include
-their matching model and work offline; on first use they extract a verified
+the fast model and work offline; on first use they extract a verified
 copy to the model cache so llama.cpp can memory-map it. Selecting a different
-model with `--model` downloads that model. Run with `--verbose` to see model
+model is not supported. Run with `--verbose` to see model
 loading, extraction, and download status.
 
 ## Usage
@@ -193,12 +190,10 @@ completeness. Review results when correctness is critical.
 | Choice | Model | Quantization | Download | Use case |
 | --- | --- | --- | ---: | --- |
 | `fast` | Qwen3 0.6B | Q4_K_M | about 400 MB | Default, lower latency |
-| `quality` | Qwen3 1.7B | Q4_K_M | about 1.1 GB | Better extraction quality |
-
 Select a model with:
 
 ```sh
-glean --model quality --schema schema.json input.txt
+glean --model fast --schema schema.json input.txt
 ```
 
 Downloads are SHA-256 verified and cached under:
@@ -209,16 +204,14 @@ Downloads are SHA-256 verified and cached under:
 
 ## Release Editions
 
-Each supported platform has four release assets:
+Each supported platform has two release assets:
 
-| Edition | Default CLI model | Typical size | Model behavior |
-| --- | ---: | --- |
-| `thin-fast` | `fast` | about 15 MB | Downloads the fast model on first use |
-| `thin-high` | `quality` | about 15 MB | Downloads the quality model on first use |
-| `full-fast` | `fast` | about 400 MB | Includes the fast model |
-| `full-high` | `quality` | about 1.1 GB | Includes the quality model |
+| Edition | Model | Typical size | Model behavior |
+| --- | --- | ---: | --- |
+| `thin-fast` | Qwen3 0.6B | about 15 MB | Downloads the model on first use |
+| `full-fast` | Qwen3 0.6B | about 400 MB | Includes the model |
 
-Asset names follow `glean-{thin|full}-{fast|high}-{os}-{arch}` with `.exe` on
+Asset names follow `glean-{thin|full}-fast-{os}-{arch}` with `.exe` on
 Windows. The installer always installs the selected asset as `glean`.
 Published SHA-256 values are in `checksums.txt`. Current release targets are
 Linux amd64/arm64, macOS arm64, and Windows amd64.
@@ -233,7 +226,7 @@ are produced natively for their target architecture.
 | `--schema FILE` | | JSON Schema used for generation and validation |
 | `--fields LIST` | | Comma-separated string fields for array extraction |
 | `--pk FIELD` | unset | Primary key used to merge array records |
-| `--model NAME` | build variant default | Model choice: `fast` or `quality` |
+| `--model NAME` | `fast` | Model choice: `fast` |
 | `--max-tokens N` | `2048` | Maximum generated tokens per inference chunk |
 | `--ctx N` | `8192` | Model context window |
 | `--chunk-lines N` | `4` | Maximum source lines per root-array inference chunk; use `1` for one source line per inference or `0` to disable the line cap |
@@ -290,12 +283,10 @@ matching model into an ignored local asset before linking:
 
 ```sh
 make build-thin-fast
-make build-thin-high
 make build-full-fast
-make build-full-high
 ```
 
-Build all four release editions for the current Linux or macOS platform:
+Build both release editions for the current Linux or macOS platform:
 
 ```sh
 ./release.sh all
@@ -315,7 +306,7 @@ GPU drivers and the Vulkan loader are optional system capabilities, not hard
 runtime dependencies. If they are missing or unusable, `glean` continues with
 CPU. Use `glean --report` to inspect what the process sees.
 
-For these small models, Vulkan startup and dispatch overhead can exceed its
-benefit. Linux and Windows therefore default to CPU while exposing Vulkan with
-`--device gpu`. macOS defaults to Metal when available. `--device cpu` always
-disables offload. Automatic GPU initialization failures retry on CPU.
+`auto` prefers a detected GPU or iGPU on every platform. `--device cpu` always
+disables offload, while `--device gpu` requires an available accelerator.
+Automatic GPU initialization failures retry on CPU. For very small inputs,
+GPU startup and dispatch overhead may still make CPU faster.

@@ -1,4 +1,4 @@
-//go:build !embedded && !high
+//go:build !embedded
 
 package main
 

@@ -8,7 +8,6 @@ dist/
 # Compiled binaries
 glean
 glean-*-fast
-glean-*-high
 glean-static
 glean-*-static
 glean.exe

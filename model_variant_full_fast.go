@@ -1,4 +1,4 @@
-//go:build embedded && !high
+//go:build embedded
 
 package main
 
@@ -6,10 +6,6 @@ import _ "embed"
 
 //go:embed assets/qwen3-0.6b-q4_k_m.gguf.zst
 var embeddedModel []byte
-
-func embeddedModelFilename() string {
-	return modelRegistry["fast"].Filename
-}
 
 func defaultModel() string {
 	return "fast"

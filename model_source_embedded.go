@@ -12,7 +12,7 @@ import (
 )
 
 func materializeModel(info ModelInfo, dest string, verbose bool) (string, error) {
-	if info.Filename != embeddedModelFilename() {
+	if info.Filename != modelRegistry["fast"].Filename {
 		return downloadModel(info, dest, verbose)
 	}
 	if verbose {

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-model=${1:-all}
+model=${1:-fast}
 asset_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../assets" && pwd)"
 
 prepare() {
@@ -31,7 +31,5 @@ prepare() {
 
 case "$model" in
     fast) prepare "qwen3-0.6b-q4_k_m.gguf" "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf" "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a" ;;
-    high) prepare "qwen3-1.7b-q4_k_m.gguf" "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf" "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897" ;;
-    all) "$0" fast; "$0" high ;;
-    *) echo "Usage: $0 [fast|high|all]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [fast]" >&2; exit 1 ;;
 esac
