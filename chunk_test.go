@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -66,11 +68,21 @@ func TestStreamReaderChunksRespectsByteLimit(t *testing.T) {
 }
 
 func TestSplitChunk(t *testing.T) {
-	left, right, ok := splitChunk("one\ntwo\nthree\nfour")
+	left, right, ok := splitChunk("one||two||three||four", "||")
 	if !ok {
 		t.Fatal("expected split")
 	}
-	if left+"\n"+right != "one\ntwo\nthree\nfour" {
+	if left+"||"+right != "one||two||three||four" {
+		t.Fatalf("split changed input: %q + %q", left, right)
+	}
+}
+
+func TestSplitChunkFallsBackToRunes(t *testing.T) {
+	left, right, ok := splitChunk("abcdef", "||")
+	if !ok {
+		t.Fatal("expected split")
+	}
+	if left+right != "abcdef" {
 		t.Fatalf("split changed input: %q + %q", left, right)
 	}
 }
@@ -117,5 +129,29 @@ func TestStreamReaderChunksUsesDelimiter(t *testing.T) {
 	}
 	if len(chunks) != 2 || chunks[0] != "one||two" || chunks[1] != "three" {
 		t.Fatalf("unexpected delimiter chunks: %#v", chunks)
+	}
+}
+
+func TestEmitBufferedArray(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	if err := emitBufferedArray([]interface{}{"one", "two"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(out)) != `["one","two"]` {
+		t.Fatalf("unexpected atomic output: %q", string(out))
 	}
 }

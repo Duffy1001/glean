@@ -106,7 +106,7 @@ llama.cpp can memory-map it. Neither edition embeds a network dependency.
 
 ## Schemas
 
-`--fields` creates a root array of objects with string fields:
+`--fields` creates a root array of objects with exactly the named string fields:
 
 ```sh
 printf '%s\n' \
@@ -160,6 +160,9 @@ Use `--delimiter '\n'` for line-oriented input, `--delimiter '\0'` for
 NUL-delimited input, or any other string, including multi-character separators
 like `||`.
 
+Use `--atomic` when downstream tools require a complete JSON array on stdout.
+It buffers array items and emits nothing unless the full extraction succeeds.
+
 ```sh
 cat application.log |
   glean --fields timestamp,level,message --delimiter '\n'
@@ -173,8 +176,8 @@ git ls-files -z |
 ```
 
 Oversized records are split and retried. Output is one JSON array, but its items
-are written incrementally. If a later chunk fails, the command exits nonzero
-and stdout may contain a partial JSON stream.
+are written incrementally by default. If a later chunk fails, the command exits
+nonzero and stdout may contain a partial JSON stream unless `--atomic` is used.
 
 ## Local Devices
 
@@ -247,10 +250,11 @@ Models are cached under:
 | Option | Default | Description |
 | --- | --- | --- |
 | `--schema FILE` | | JSON Schema used for generation and validation |
-| `--fields LIST` | | Comma-separated string fields for array extraction |
+| `--fields LIST` | | Comma-separated string fields for array extraction; names must be unique and non-empty |
 | `--model NAME` | `fast` | Supported model: `fast` |
 | `--max-tokens N` | `2048` | Maximum generated tokens per inference chunk |
 | `--ctx N` | `8192` | Model context window |
+| `--atomic` | `false` | Buffer array output and only emit it after all chunks succeed |
 | `--delimiter STRING` | `\n` | Record separator for array extraction; supports `\n`, `\t`, `\r`, `\0`, `\\`, and multi-character strings |
 | `--threads N` | `4` | CPU inference threads |
 | `--device NAME` | `auto` | Device policy: `auto`, `cpu`, or `gpu` |

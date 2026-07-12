@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 type ModelInfo struct {
@@ -18,6 +19,8 @@ type ModelInfo struct {
 	SHA256   string
 	Size     int64
 }
+
+const modelDownloadTimeout = 30 * time.Minute
 
 var modelRegistry = map[string]ModelInfo{
 	"fast": {
@@ -81,7 +84,8 @@ func downloadModel(info ModelInfo, dest string, verbose bool) (string, error) {
 		fmt.Fprintf(os.Stderr, "Downloading %s (%s)...\n", info.Name, humanSize(info.Size))
 	}
 
-	resp, err := http.Get(info.URL)
+	client := &http.Client{Timeout: modelDownloadTimeout}
+	resp, err := client.Get(info.URL)
 	if err != nil {
 		return "", fmt.Errorf("download failed: %w", err)
 	}

@@ -12,14 +12,14 @@ jobs:
   model:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           submodules: recursive
       - name: Install zstd
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
       - name: Prepare embedded models
         run: ./scripts/prepare-embedded-model.sh fast
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: embedded-model
           path: assets/*.gguf.zst
@@ -42,10 +42,10 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           submodules: recursive
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
@@ -57,7 +57,7 @@ jobs:
           else
             brew install cmake
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: embedded-model
           path: assets
@@ -99,7 +99,7 @@ jobs:
               exit 1
             fi
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/glean-*
@@ -108,17 +108,17 @@ jobs:
     needs: model
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           submodules: recursive
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
       - name: Export Go root for MSYS2
         shell: pwsh
         run: '"GOROOT=$(go env GOROOT)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
         with:
           msystem: MINGW64
           update: true
@@ -131,7 +131,7 @@ jobs:
             mingw-w64-x86_64-shaderc
             mingw-w64-x86_64-spirv-headers
             mingw-w64-x86_64-vulkan-devel
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: embedded-model
           path: assets
@@ -160,7 +160,7 @@ jobs:
           dist/glean-full-fast-windows-amd64.exe --version
           dist/glean-thin-fast-windows-amd64.exe --report
           ! objdump -p dist/*.exe | grep 'DLL Name' | grep -viE '(KERNEL32|msvcrt|USER32|ADVAPI32|WS2_32|bcrypt|ntdll)'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: binaries-windows-amd64
           path: dist/*.exe
@@ -170,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: binaries-*
           path: artifacts
@@ -179,7 +179,7 @@ jobs:
         working-directory: artifacts
         run: sha256sum glean-* > checksums.txt
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           generate_release_notes: true
           files: artifacts/*

@@ -5,7 +5,10 @@ import (
 )
 
 func TestBuildSchemaFromFields(t *testing.T) {
-	schema := buildSchemaFromFields("name,age,email")
+	schema, err := buildSchemaFromFields("name,age,email")
+	if err != nil {
+		t.Fatalf("schema build failed: %v", err)
+	}
 
 	v, err := NewSchemaValidator(schema)
 	if err != nil {
@@ -20,6 +23,10 @@ func TestBuildSchemaFromFields(t *testing.T) {
 		t.Errorf("multi-item array rejected: %v", err)
 	}
 
+	if err := v.Validate(`[{"name":"Alice","age":"30","email":"alice@test.com","extra":"nope"}]`); err == nil {
+		t.Error("extra property should fail validation")
+	}
+
 	if err := v.Validate(`[{"name":"Alice"}]`); err == nil {
 		t.Error("item missing required fields should fail validation")
 	}
@@ -30,25 +37,20 @@ func TestBuildSchemaFromFields(t *testing.T) {
 }
 
 func TestBuildSchemaFromFieldsEmpty(t *testing.T) {
-	schema := buildSchemaFromFields("")
-	v, err := NewSchemaValidator(schema)
-	if err != nil {
-		t.Fatalf("schema invalid: %v", err)
-	}
-	if err := v.Validate(`[]`); err != nil {
-		t.Errorf("empty array should be valid for empty schema: %v", err)
+	if _, err := buildSchemaFromFields(""); err == nil {
+		t.Fatal("empty fields should fail")
 	}
 }
 
 func TestBuildSchemaFromFieldsWhitespace(t *testing.T) {
-	schema := buildSchemaFromFields("  foo ,  bar  ,,")
-
-	v, err := NewSchemaValidator(schema)
-	if err != nil {
-		t.Fatalf("schema invalid: %v", err)
+	if _, err := buildSchemaFromFields("  foo ,  bar  ,, "); err == nil {
+		t.Fatal("empty field names should fail")
 	}
-	if err := v.Validate(`[{"foo":"1","bar":"2"}]`); err != nil {
-		t.Errorf("whitespace handling failed: %v", err)
+}
+
+func TestBuildSchemaFromFieldsDuplicate(t *testing.T) {
+	if _, err := buildSchemaFromFields("foo,bar,foo"); err == nil {
+		t.Fatal("duplicate field names should fail")
 	}
 }
 

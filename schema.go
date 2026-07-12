@@ -27,29 +27,41 @@ var defaultSchema = `{
   "required": ["content_type", "summary", "attributes", "warnings"]
 }`
 
-func buildSchemaFromFields(fields string) string {
+func buildSchemaFromFields(fields string) (string, error) {
 	parts := strings.Split(fields, ",")
-	props := make(map[string]interface{})
+	props := make(map[string]interface{}, len(parts))
+	seen := make(map[string]struct{}, len(parts))
 	required := make([]string, 0, len(parts))
 	for _, f := range parts {
 		f = strings.TrimSpace(f)
 		if f == "" {
-			continue
+			return "", fmt.Errorf("fields list cannot contain empty names")
 		}
+		if _, ok := seen[f]; ok {
+			return "", fmt.Errorf("duplicate field %q", f)
+		}
+		seen[f] = struct{}{}
 		props[f] = map[string]string{"type": "string"}
 		required = append(required, f)
 	}
+	if len(required) == 0 {
+		return "", fmt.Errorf("fields list cannot be empty")
+	}
 	itemSchema := map[string]interface{}{
-		"type":       "object",
-		"properties": props,
-		"required":   required,
+		"type":                 "object",
+		"properties":           props,
+		"required":             required,
+		"additionalProperties": false,
 	}
 	schema := map[string]interface{}{
 		"type":  "array",
 		"items": itemSchema,
 	}
-	b, _ := json.MarshalIndent(schema, "", "  ")
-	return string(b)
+	b, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func jsonSchemaToGBNF(schemaStr string) (string, error) {

@@ -25,10 +25,11 @@ var errPromptTooLong = errors.New("prompt exceeds context budget")
 
 func main() {
 	schemaFile := flag.String("schema", "", "JSON Schema file for constrained output")
-	fields := flag.String("fields", "", "Comma-separated field names for simple schema")
+	fields := flag.String("fields", "", "Comma-separated field names for simple schema; names must be unique and non-empty")
 	modelChoice := flag.String("model", defaultModel(), "Model: fast (0.6B)")
 	maxTokens := flag.Int("max-tokens", 2048, "Maximum tokens to generate")
 	compact := flag.Bool("compact", false, "Output compact JSON")
+	atomic := flag.Bool("atomic", false, "Buffer array output and emit only after all chunks succeed")
 	nThreads := flag.Int("threads", 4, "CPU threads")
 	nCtx := flag.Int("ctx", 8192, "Context window size")
 	delimiter := flag.String("delimiter", "\\n", "Record delimiter for array extraction (supports \\n, \\t, \\r, \\0, \\\\, and multi-character strings)")
@@ -39,10 +40,18 @@ func main() {
 	showVersion := flag.Bool("version", false, "Show version and build edition")
 	showReport := flag.Bool("report", false, "Report available inference backends and devices as JSON")
 	flag.Parse()
+	var err error
 	if *showVersion {
 		fmt.Printf("glean %s (%s)\n", version, buildVariant())
 		return
 	}
+
+	fieldsProvided := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "fields" {
+			fieldsProvided = true
+		}
+	})
 
 	if *verbose {
 		llama.SetLogLevel(1)
@@ -125,8 +134,12 @@ func main() {
 			os.Exit(1)
 		}
 		schema = string(data)
-	} else if *fields != "" {
-		schema = buildSchemaFromFields(*fields)
+	} else if fieldsProvided {
+		schema, err = buildSchemaFromFields(*fields)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Field schema error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	validator, err := NewSchemaValidator(schema)
@@ -202,7 +215,12 @@ func main() {
 	var processArrayChunk func(string) error
 	arrayStarted := false
 	arrayItems := 0
+	bufferedArrayItems := make([]interface{}, 0)
 	writeArrayItem := func(item interface{}) error {
+		if *atomic {
+			bufferedArrayItems = append(bufferedArrayItems, item)
+			return nil
+		}
 		if !arrayStarted {
 			fmt.Print("[")
 			arrayStarted = true
@@ -239,7 +257,7 @@ func main() {
 		totalGenerated += generated
 		if err != nil {
 			if errors.Is(err, errPromptTooLong) {
-				left, right, ok := splitChunk(chunk)
+				left, right, ok := splitChunk(chunk, delim)
 				if ok {
 					if err := processArrayChunk(left); err != nil {
 						return err
@@ -253,7 +271,7 @@ func main() {
 		var parsed []interface{}
 		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 			if hitLimit {
-				left, right, ok := splitChunk(chunk)
+				left, right, ok := splitChunk(chunk, delim)
 				if ok {
 					if err := processArrayChunk(left); err != nil {
 						return err
@@ -285,7 +303,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "No input provided")
 			os.Exit(1)
 		}
-		if !arrayStarted {
+		if *atomic {
+			if err := emitBufferedArray(bufferedArrayItems, *compact); err != nil {
+				fmt.Fprintf(os.Stderr, "Atomic output error: %v\n", err)
+				os.Exit(1)
+			}
+		} else if !arrayStarted {
 			fmt.Print("[]")
 		} else {
 			fmt.Print("]")
@@ -397,6 +420,33 @@ func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 	}
 
 	return raw, generated, generated == maxTokens, nil
+}
+
+func emitBufferedArray(items []interface{}, compact bool) error {
+	if len(items) == 0 {
+		fmt.Println("[]")
+		return nil
+	}
+
+	fmt.Print("[")
+	for i, item := range items {
+		if i > 0 {
+			fmt.Print(",")
+		}
+		var data []byte
+		var err error
+		if compact {
+			data, err = json.Marshal(item)
+		} else {
+			data, err = json.MarshalIndent(item, "", "  ")
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Print(string(data))
+	}
+	fmt.Println("]")
+	return nil
 }
 
 func streamSources(paths []string, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
@@ -530,12 +580,12 @@ func readSources(paths []string) (string, error) {
 	return input.String(), nil
 }
 
-func splitChunk(chunk string) (string, string, bool) {
-	lines := strings.Split(chunk, "\n")
-	if len(lines) > 1 {
-		mid := len(lines) / 2
-		if mid > 0 && mid < len(lines) {
-			return strings.Join(lines[:mid], "\n"), strings.Join(lines[mid:], "\n"), true
+func splitChunk(chunk, delimiter string) (string, string, bool) {
+	parts := strings.Split(chunk, delimiter)
+	if len(parts) > 1 {
+		mid := len(parts) / 2
+		if mid > 0 && mid < len(parts) {
+			return strings.Join(parts[:mid], delimiter), strings.Join(parts[mid:], delimiter), true
 		}
 	}
 
