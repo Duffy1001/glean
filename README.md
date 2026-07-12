@@ -117,7 +117,8 @@ printf '%s\n' \
   glean --fields host,status
 ```
 
-The first field is the implicit primary key. Override it with `--pk`:
+Use `--pk` when overlapping chunks or repeated source records should be
+deduplicated and merged:
 
 ```sh
 glean --fields timestamp,host,status --pk host events.log
@@ -130,10 +131,11 @@ This also removes duplicates introduced by overlapping chunks.
 ## Streaming And Chunking
 
 Schemas with root `"type": "array"` are processed incrementally from stdin or
-files. `glean` splits input at line boundaries, retains a small overlap, runs
-extraction for each chunk, validates every result, and merges the arrays before
-printing the final JSON document. Oversized or token-truncated chunks are split
-and retried.
+files. `glean` splits input at line boundaries, runs extraction for each chunk,
+validates every result, and merges the arrays before printing the final JSON
+document. Chunks do not overlap by default. Supplying `--pk` enables a small
+overlap, followed by primary-key merging. Oversized or token-truncated chunks
+are split and retried.
 
 This keeps input memory bounded for commands such as:
 
@@ -229,10 +231,11 @@ are produced natively for their target architecture.
 | --- | --- | --- |
 | `--schema FILE` | | JSON Schema used for generation and validation |
 | `--fields LIST` | | Comma-separated string fields for array extraction |
-| `--pk FIELD` | first `--fields` entry, otherwise unset | Primary key used to merge array records |
+| `--pk FIELD` | unset | Primary key used to merge array records |
 | `--model NAME` | build variant default | Model choice: `fast` or `quality` |
 | `--max-tokens N` | `2048` | Maximum generated tokens per inference chunk |
 | `--ctx N` | `8192` | Model context window |
+| `--chunk-lines N` | `4` | Maximum source lines per root-array inference chunk; use `1` for one source line per inference or `0` to disable the line cap |
 | `--threads N` | `4` | CPU inference threads |
 | `--compact` | `false` | Print compact rather than indented JSON |
 | `--no-grammar` | `false` | Disable grammar constraints; validation remains enabled |

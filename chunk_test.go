@@ -8,7 +8,7 @@ import (
 func TestStreamReaderChunksPreservesInputWithOverlap(t *testing.T) {
 	input := "one\ntwo\nthree\nfour\nfive\nsix\nseven\n"
 	var chunks []string
-	hadInput, err := streamReaderChunks(strings.NewReader(input), 12, func(chunk string) error {
+	hadInput, err := streamReaderChunks(strings.NewReader(input), 12, 0, overlapLines, func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -36,7 +36,7 @@ func TestStreamReaderChunksPreservesInputWithOverlap(t *testing.T) {
 }
 
 func TestStreamReaderChunksEmptyInput(t *testing.T) {
-	hadInput, err := streamReaderChunks(strings.NewReader(" \n\t"), 10, func(string) error {
+	hadInput, err := streamReaderChunks(strings.NewReader(" \n\t"), 10, 0, 0, func(string) error {
 		t.Fatal("callback should not be called")
 		return nil
 	})
@@ -45,6 +45,23 @@ func TestStreamReaderChunksEmptyInput(t *testing.T) {
 	}
 	if hadInput {
 		t.Fatal("whitespace-only input should be empty")
+	}
+}
+
+func TestStreamReaderChunksRespectsLineLimit(t *testing.T) {
+	var chunks []string
+	_, err := streamReaderChunks(strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 100, 2, 0, func(chunk string) error {
+		chunks = append(chunks, chunk)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	}
+	if chunks[0] != "one\ntwo\n" || chunks[1] != "three\nfour\n" || chunks[2] != "five\n" {
+		t.Fatalf("unexpected chunks: %#v", chunks)
 	}
 }
 

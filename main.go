@@ -33,6 +33,7 @@ func main() {
 	compact := flag.Bool("compact", false, "Output compact JSON")
 	nThreads := flag.Int("threads", 4, "CPU threads")
 	nCtx := flag.Int("ctx", 8192, "Context window size")
+	chunkLines := flag.Int("chunk-lines", 4, "Maximum input lines per array extraction chunk (0 disables)")
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	verbose := flag.Bool("verbose", false, "Show llama.cpp debug output")
 	pkField := flag.String("pk", "", "Primary key field for dedup/merge (default: first field with --fields)")
@@ -57,7 +58,6 @@ func main() {
 	args := flag.Args()
 
 	schema := defaultSchema
-	usingFields := false
 	if *schemaFile != "" {
 		data, err := os.ReadFile(*schemaFile)
 		if err != nil {
@@ -67,19 +67,9 @@ func main() {
 		schema = string(data)
 	} else if *fields != "" {
 		schema = buildSchemaFromFields(*fields)
-		usingFields = true
 	}
 
 	effectivePK := *pkField
-	if effectivePK == "" && usingFields {
-		for _, f := range strings.Split(*fields, ",") {
-			f = strings.TrimSpace(f)
-			if f != "" {
-				effectivePK = f
-				break
-			}
-		}
-	}
 
 	validator, err := NewSchemaValidator(schema)
 	if err != nil {
@@ -199,7 +189,11 @@ func main() {
 
 	arraySchema := schemaHasRootType(schema, "array")
 	if arraySchema {
-		hadInput, err := streamSources(args, inputCharsBudget, processArrayChunk)
+		overlap := 0
+		if effectivePK != "" {
+			overlap = overlapLines
+		}
+		hadInput, err := streamSources(args, inputCharsBudget, *chunkLines, overlap, processArrayChunk)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -290,7 +284,9 @@ func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
 
 	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
-		"When the schema defines an array, extract ALL matching items from the input, not just the first.\n\n" +
+		"When the schema defines an array, extract ALL matching items from the input, not just the first. " +
+		"For line-oriented lists or tables, process every non-empty source row from first to last and emit a separate item for each row. " +
+		"Do not summarize, group, combine, deduplicate, or omit repeated-looking rows. Preserve literal identifiers and numeric suffixes exactly as written.\n\n" +
 		"Schema:\n" + schema + "\n\nInput:\n" + chunkInput
 
 	prompt, err := m.ChatApplyTemplate(systemMsg, userMsg, true)
@@ -342,9 +338,9 @@ func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int,
 	return raw, generated, generated == maxTokens, nil
 }
 
-func streamSources(paths []string, byteBudget int, yield func(string) error) (bool, error) {
+func streamSources(paths []string, byteBudget, maxLines, overlap int, yield func(string) error) (bool, error) {
 	if len(paths) == 0 {
-		return streamReaderChunks(os.Stdin, byteBudget, yield)
+		return streamReaderChunks(os.Stdin, byteBudget, maxLines, overlap, yield)
 	}
 
 	hadInput := false
@@ -353,7 +349,7 @@ func streamSources(paths []string, byteBudget int, yield func(string) error) (bo
 		if err != nil {
 			return hadInput, fmt.Errorf("read %s: %w", path, err)
 		}
-		hadFileInput, readErr := streamReaderChunks(f, byteBudget, yield)
+		hadFileInput, readErr := streamReaderChunks(f, byteBudget, maxLines, overlap, yield)
 		closeErr := f.Close()
 		hadInput = hadInput || hadFileInput
 		if readErr != nil {
@@ -366,7 +362,7 @@ func streamSources(paths []string, byteBudget int, yield func(string) error) (bo
 	return hadInput, nil
 }
 
-func streamReaderChunks(r io.Reader, byteBudget int, yield func(string) error) (bool, error) {
+func streamReaderChunks(r io.Reader, byteBudget, maxLines, overlap int, yield func(string) error) (bool, error) {
 	reader := bufio.NewReader(r)
 	var lines []string
 	currentBytes := 0
@@ -383,11 +379,11 @@ func streamReaderChunks(r io.Reader, byteBudget int, yield func(string) error) (
 				return err
 			}
 		}
-		overlap := overlapLines
-		if overlap > len(lines) {
-			overlap = len(lines)
+		keep := overlap
+		if keep > len(lines) {
+			keep = len(lines)
 		}
-		lines = append([]string(nil), lines[len(lines)-overlap:]...)
+		lines = append([]string(nil), lines[len(lines)-keep:]...)
 		currentBytes = 0
 		for _, line := range lines {
 			currentBytes += len(line)
@@ -398,7 +394,7 @@ func streamReaderChunks(r io.Reader, byteBudget int, yield func(string) error) (
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
-			if currentBytes+len(line) > byteBudget && len(lines) > 0 {
+			if len(lines) > 0 && (currentBytes+len(line) > byteBudget || (maxLines > 0 && len(lines) >= maxLines)) {
 				if emitErr := emit(); emitErr != nil {
 					return hadInput, emitErr
 				}
