@@ -9,6 +9,8 @@ CMAKE_EXTRA_ARGS ?=
 GO_LDFLAGS := -s -w -X main.version=$(VERSION)
 CGO_CFLAGS := -I$(CURDIR)/$(LLAMA_DIR)/include -I$(CURDIR)/$(LLAMA_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/ggml/src -I$(CURDIR)/$(BUILD_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/common -I$(CURDIR)/$(CBRIDGE_DIR)
 VENDOR_INC := -I$(CURDIR)/$(LLAMA_DIR)/vendor
+VULKAN_INCLUDE_DIR = $(shell awk -F= '/^Vulkan_INCLUDE_DIR:PATH=/{print $$2}' $(BUILD_DIR)/CMakeCache.txt 2>/dev/null)
+VULKAN_INCLUDE_FLAG = $(if $(VULKAN_SDK),-I$(VULKAN_SDK)/include,$(if $(VULKAN_INCLUDE_DIR),-I$(VULKAN_INCLUDE_DIR)))
 
 # Detect platform
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
@@ -93,7 +95,7 @@ build-bridge: setup
 		$(VENDOR_INC) \
 		$(CBRIDGE_DIR)/schema_bridge.cpp -o $(BRIDGE_OBJ)
 	@if [ -n "$(BACKEND_OBJ)" ]; then \
-		$(CC) -c -O2 -I$(CURDIR)/$(LLAMA_DIR)/ggml/include $(if $(VULKAN_SDK),-I$(VULKAN_SDK)/include) $(CBRIDGE_DIR)/vulkan_loader.c -o $(BACKEND_OBJ); \
+		$(CC) -c -O2 -I$(CURDIR)/$(LLAMA_DIR)/ggml/include $(VULKAN_INCLUDE_FLAG) $(CBRIDGE_DIR)/vulkan_loader.c -o $(BACKEND_OBJ); \
 	fi
 
 build-go: build-llama build-bridge
