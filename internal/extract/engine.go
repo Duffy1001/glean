@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -91,7 +90,7 @@ func (e *Engine) extractObject(ctx context.Context, prepared *preparedSchema, re
 		return Result{}, err
 	}
 
-	raw, generated, _, err := generateOne(ctx, e.model, prepared.raw, input, req.MaxTokens, e.config.ContextSize, e.eos, e.config.Verbose)
+	raw, generated, _, err := generateOne(ctx, e.model, prepared.raw, input, req.MaxTokens, e.config.ContextSize, e.eos)
 	if err != nil {
 		return Result{}, err
 	}
@@ -119,11 +118,7 @@ func (e *Engine) extractArray(ctx context.Context, prepared *preparedSchema, req
 			return err
 		}
 		chunkNumber++
-		if e.config.Verbose {
-			fmt.Fprintf(os.Stderr, "Processing chunk %d (%d bytes)...\n", chunkNumber, len(chunk))
-		}
-
-		raw, generated, hitLimit, err := generateOne(ctx, e.model, prepared.raw, chunk, req.MaxTokens, e.config.ContextSize, e.eos, e.config.Verbose)
+		raw, generated, hitLimit, err := generateOne(ctx, e.model, prepared.raw, chunk, req.MaxTokens, e.config.ContextSize, e.eos)
 		generatedTokens += generated
 		if err != nil {
 			if errors.Is(err, errPromptTooLong) {

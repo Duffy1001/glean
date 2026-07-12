@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/duffy1001/glean/llama"
@@ -12,7 +11,7 @@ import (
 
 var errPromptTooLong = errors.New("prompt exceeds context budget")
 
-func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32, verbose bool) (string, int, bool, error) {
+func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32) (string, int, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return "", 0, false, err
 	}
@@ -32,9 +31,6 @@ func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string,
 	tokens, err := m.Tokenize(prompt, false, true)
 	if err != nil {
 		return "", 0, false, fmt.Errorf("tokenize: %w", err)
-	}
-	if verbose {
-		fmt.Fprintf(os.Stderr, "Prompt: %d tokens\n", len(tokens))
 	}
 	if len(tokens)+maxTokens > nCtx {
 		return "", 0, false, fmt.Errorf("%w: prompt %d + generation %d > context %d", errPromptTooLong, len(tokens), maxTokens, nCtx)
