@@ -87,7 +87,7 @@ jobs:
           dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --report
           if [ "${{ matrix.os }}" = linux ]; then
             GGML_DISABLE_VULKAN=1 dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --report
-            bad=$(readelf -d dist/glean-* | grep NEEDED | grep -vE 'lib(c|m|dl|pthread|gcc_s|stdc\+\+|atomic)\.so' || true)
+            bad=$(readelf -d dist/glean-* | grep NEEDED | grep -vE 'lib(c|m|dl|pthread|gcc_s|stdc\+\+|atomic)\.so|ld-linux' || true)
             if [ -n "$bad" ]; then
               printf '%s\n' "$bad"
               exit 1
