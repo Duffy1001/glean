@@ -53,12 +53,12 @@ func (e *Engine) Extract(ctx context.Context, req Request, sources []Source) (Re
 		return Result{}, errors.New("extract with closed engine")
 	}
 
+	start := time.Now()
 	prepared, err := prepareSchema(req.Schema, e.config.GrammarEnabled)
 	if err != nil {
-		return Result{}, err
+		return Result{Metrics: Metrics{TotalTime: time.Since(start)}}, err
 	}
 
-	start := time.Now()
 	if prepared.root == rootArray {
 		return e.extractArray(ctx, prepared, req, sources, start)
 	}
@@ -78,35 +78,78 @@ func (e *Engine) Close() error {
 }
 
 func (e *Engine) extractObject(ctx context.Context, prepared *preparedSchema, req Request, sources []Source, start time.Time) (Result, error) {
+	var metrics Metrics
 	input, err := readSources(sources)
 	if err != nil {
-		return Result{}, err
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics}, err
 	}
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return Result{}, ErrNoInput
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics}, ErrNoInput
 	}
+	metrics.InputBytes = int64(len(input))
 	if err := e.reset(prepared); err != nil {
-		return Result{}, err
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics}, err
 	}
 
-	raw, generated, _, err := generateOne(ctx, e.model, prepared.raw, input, req.MaxTokens, e.config.ContextSize, e.eos)
+	generation, err := generateOne(ctx, e.model, prepared.raw, input, req.MaxTokens, e.config.ContextSize, e.eos)
 	if err != nil {
-		return Result{}, err
+		metrics = generation.metrics
+		metrics.InputBytes = int64(len(input))
+		metrics.ChunksProcessed = 1
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics}, err
 	}
-	if err := prepared.validator.validate(raw); err != nil {
-		return Result{}, err
+	metrics = generation.metrics
+	metrics.InputBytes = int64(len(input))
+	metrics.ChunksProcessed = 1
+
+	parseStart := time.Now()
+	parsed, err := parseJSON(generation.raw)
+	metrics.ParseTime = time.Since(parseStart)
+	if err != nil {
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics}, err
 	}
-	return Result{JSON: json.RawMessage(raw), GeneratedTokens: generated, TotalTime: time.Since(start)}, nil
+	validationStart := time.Now()
+	if err := prepared.validator.validateValue(parsed); err != nil {
+		metrics.ValidationTime = time.Since(validationStart)
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics}, err
+	}
+	metrics.ValidationTime = time.Since(validationStart)
+	metrics.RecordsProduced = 1
+	metrics.OutputBytes = int64(len(generation.raw))
+	metrics.TotalTime = time.Since(start)
+	chunk := ChunkMetrics{
+		Index:            1,
+		InputBytes:       metrics.InputBytes,
+		PromptTokens:     metrics.PromptTokens,
+		GeneratedTokens:  metrics.GeneratedTokens,
+		RecordsProduced:  1,
+		PromptBuildTime:  metrics.PromptBuildTime,
+		TokenizeTime:     metrics.TokenizeTime,
+		PrefillTime:      metrics.PrefillTime,
+		TimeToFirstToken: metrics.TimeToFirstToken,
+		GenerationTime:   metrics.GenerationTime,
+		ParseTime:        metrics.ParseTime,
+		ValidationTime:   metrics.ValidationTime,
+		TotalTime:        time.Since(start),
+	}
+	return Result{JSON: json.RawMessage(generation.raw), Metrics: metrics, ChunkRuns: []ChunkMetrics{chunk}}, nil
 }
 
 func (e *Engine) extractArray(ctx context.Context, prepared *preparedSchema, req Request, sources []Source, start time.Time) (Result, error) {
-	items := make([]json.RawMessage, 0)
-	generatedTokens := 0
+	items := make([]any, 0)
+	var metrics Metrics
+	chunkRuns := make([]ChunkMetrics, 0)
 	chunkNumber := 0
 
-	var processChunk func(string) error
-	processChunk = func(chunk string) error {
+	var processChunk func(string, int) error
+	processChunk = func(chunk string, retryDepth int) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -114,66 +157,112 @@ func (e *Engine) extractArray(ctx context.Context, prepared *preparedSchema, req
 		if chunk == "" {
 			return nil
 		}
+		chunkNumber++
+		chunkMetrics := ChunkMetrics{
+			Index:      chunkNumber,
+			InputBytes: int64(len(chunk)),
+			Retried:    retryDepth > 0,
+			RetryDepth: retryDepth,
+		}
+		chunkStart := time.Now()
+		runIndex := len(chunkRuns)
+		chunkRuns = append(chunkRuns, chunkMetrics)
+		defer func() {
+			chunkMetrics.TotalTime = time.Since(chunkStart)
+			metrics.addChunk(chunkMetrics)
+			chunkRuns[runIndex] = chunkMetrics
+		}()
+
 		if err := e.reset(prepared); err != nil {
 			return err
 		}
-		chunkNumber++
-		raw, generated, hitLimit, err := generateOne(ctx, e.model, prepared.raw, chunk, req.MaxTokens, e.config.ContextSize, e.eos)
-		generatedTokens += generated
+		generation, err := generateOne(ctx, e.model, prepared.raw, chunk, req.MaxTokens, e.config.ContextSize, e.eos)
+		chunkMetrics.PromptTokens = generation.metrics.PromptTokens
+		chunkMetrics.GeneratedTokens = generation.metrics.GeneratedTokens
+		chunkMetrics.PromptBuildTime = generation.metrics.PromptBuildTime
+		chunkMetrics.TokenizeTime = generation.metrics.TokenizeTime
+		chunkMetrics.PrefillTime = generation.metrics.PrefillTime
+		chunkMetrics.TimeToFirstToken = generation.metrics.TimeToFirstToken
+		chunkMetrics.GenerationTime = generation.metrics.GenerationTime
 		if err != nil {
 			if errors.Is(err, errPromptTooLong) {
 				left, right, ok := splitChunk(chunk, req.Delimiter)
 				if ok {
-					if err := processChunk(left); err != nil {
+					if err := processChunk(left, retryDepth+1); err != nil {
 						return err
 					}
-					return processChunk(right)
+					return processChunk(right, retryDepth+1)
 				}
 			}
 			return fmt.Errorf("chunk %d: %w", chunkNumber, err)
 		}
 
-		var parsed []json.RawMessage
-		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-			if hitLimit {
+		parseStart := time.Now()
+		parsed, err := parseJSON(generation.raw)
+		chunkMetrics.ParseTime = time.Since(parseStart)
+		if err != nil {
+			if generation.hitLimit {
 				left, right, ok := splitChunk(chunk, req.Delimiter)
 				if ok {
-					if err := processChunk(left); err != nil {
+					if err := processChunk(left, retryDepth+1); err != nil {
 						return err
 					}
-					return processChunk(right)
+					return processChunk(right, retryDepth+1)
 				}
 			}
 			return fmt.Errorf("chunk %d produced invalid JSON: %w", chunkNumber, err)
 		}
-		if err := prepared.validator.validate(raw); err != nil {
+		array, ok := parsed.([]any)
+		if !ok {
+			return fmt.Errorf("chunk %d produced a non-array result", chunkNumber)
+		}
+		validationStart := time.Now()
+		if err := prepared.validator.validateValue(parsed); err != nil {
+			chunkMetrics.ValidationTime = time.Since(validationStart)
 			return fmt.Errorf("chunk %d validation: %w", chunkNumber, err)
 		}
-		items = append(items, parsed...)
+		chunkMetrics.ValidationTime = time.Since(validationStart)
+		chunkMetrics.RecordsProduced = len(array)
+		items = append(items, array...)
 		return nil
 	}
 
 	inputBudget := e.config.ContextSize - promptOverheadTokens - req.MaxTokens
 	if inputBudget < 1 {
-		return Result{}, errors.New("context is too small for the requested max-tokens")
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics, ChunkRuns: chunkRuns}, errors.New("context is too small for the requested max-tokens")
 	}
 	inputCharsBudget := int(float64(inputBudget) * charsPerInputToken)
-	hadInput, err := streamSources(ctx, sources, inputCharsBudget, req.Delimiter, processChunk)
+	hadInput, err := streamSources(ctx, sources, inputCharsBudget, req.Delimiter, func(chunk string) error {
+		return processChunk(chunk, 0)
+	})
 	if err != nil {
-		return Result{}, err
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics, ChunkRuns: chunkRuns}, err
 	}
 	if !hadInput {
-		return Result{}, ErrNoInput
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics, ChunkRuns: chunkRuns}, ErrNoInput
 	}
 
+	serializationStart := time.Now()
 	raw, err := json.Marshal(items)
+	metrics.SerializationTime = time.Since(serializationStart)
 	if err != nil {
-		return Result{}, fmt.Errorf("marshal array result: %w", err)
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics, ChunkRuns: chunkRuns}, fmt.Errorf("marshal array result: %w", err)
 	}
-	if err := prepared.validator.validate(string(raw)); err != nil {
-		return Result{}, err
+	validationStart := time.Now()
+	if err := prepared.validator.validateValue(items); err != nil {
+		metrics.ValidationTime += time.Since(validationStart)
+		metrics.TotalTime = time.Since(start)
+		return Result{Metrics: metrics, ChunkRuns: chunkRuns}, err
 	}
-	return Result{JSON: raw, GeneratedTokens: generatedTokens, TotalTime: time.Since(start)}, nil
+	metrics.ValidationTime += time.Since(validationStart)
+	metrics.OutputBytes = int64(len(raw))
+	metrics.RecordsProduced = len(items)
+	metrics.TotalTime = time.Since(start)
+	return Result{JSON: raw, Metrics: metrics, ChunkRuns: chunkRuns}, nil
 }
 
 func (e *Engine) reset(prepared *preparedSchema) error {

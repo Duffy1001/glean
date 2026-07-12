@@ -32,11 +32,22 @@ func newSchemaValidator(schemaStr string) (*schemaValidator, error) {
 }
 
 func (v *schemaValidator) validate(jsonStr string) error {
+	data, err := parseJSON(jsonStr)
+	if err != nil {
+		return err
+	}
+	return v.validateValue(data)
+}
+
+func parseJSON(jsonStr string) (any, error) {
 	var data any
 	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
+	return data, nil
+}
 
+func (v *schemaValidator) validateValue(data any) error {
 	if err := v.schema.Validate(data); err != nil {
 		if ve, ok := err.(*jsonschema.ValidationError); ok {
 			var msgs []string

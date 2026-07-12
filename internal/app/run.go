@@ -158,9 +158,9 @@ func Run(ctx context.Context, opts Options, stdin io.Reader, stdout, stderr io.W
 	if err := writeJSON(stdout, result.JSON, opts.Compact); err != nil {
 		return err
 	}
-	if result.GeneratedTokens > 0 {
+	if result.Metrics.GeneratedTokens > 0 {
 		verbosef("Generated %d tokens in %v (%.1f tok/s)\n",
-			result.GeneratedTokens, result.TotalTime, float64(result.GeneratedTokens)/result.TotalTime.Seconds())
+			result.Metrics.GeneratedTokens, result.Metrics.TotalTime, float64(result.Metrics.GeneratedTokens)/result.Metrics.TotalTime.Seconds())
 	}
 	return nil
 }

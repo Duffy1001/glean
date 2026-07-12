@@ -5,15 +5,18 @@ package extract
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/duffy1001/glean"
+	"github.com/duffy1001/glean/llama"
 )
 
 func newIntegrationEngine(t *testing.T) *Engine {
 	t.Helper()
+	llama.SetLogLevel(6)
 	modelPath, err := glean.ResolveModel("fast", false)
 	if err != nil {
 		t.Fatalf("resolve model: %v", err)
@@ -110,5 +113,36 @@ func TestEngineRejectsCancelledContext(t *testing.T) {
 	}, []Source{{Name: "test", Reader: strings.NewReader("Alice")}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestEngineReportsStructuredMetrics(t *testing.T) {
+	engine := newIntegrationEngine(t)
+	schema, err := BuildSchemaFromFields("name,age")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := extractString(t, engine, schema, "Alice is 30 years old")
+	metrics := result.Metrics
+	if metrics.InputBytes == 0 || metrics.OutputBytes == 0 {
+		t.Fatalf("missing byte metrics: %#v", metrics)
+	}
+	if metrics.PromptTokens == 0 || metrics.GeneratedTokens == 0 {
+		t.Fatalf("missing token metrics: %#v", metrics)
+	}
+	if metrics.RecordsProduced == 0 || metrics.ChunksProcessed != 1 {
+		t.Fatalf("unexpected record or chunk metrics: %#v", metrics)
+	}
+	if metrics.TotalTime <= 0 || metrics.TokenizeTime <= 0 || metrics.PrefillTime <= 0 || metrics.GenerationTime <= 0 {
+		t.Fatalf("missing stage timing: %#v", metrics)
+	}
+	if len(result.ChunkRuns) != 1 {
+		t.Fatalf("chunk runs = %d, want 1", len(result.ChunkRuns))
+	}
+	if result.ChunkRuns[0].GeneratedTokens != metrics.GeneratedTokens {
+		t.Fatalf("chunk and aggregate generated tokens differ: %#v / %#v", result.ChunkRuns[0], metrics)
+	}
+	if _, err := json.Marshal(result); err != nil {
+		t.Fatalf("metrics result should be JSON serializable: %v", err)
 	}
 }

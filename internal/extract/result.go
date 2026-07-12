@@ -1,12 +1,9 @@
 package extract
 
-import (
-	"encoding/json"
-	"time"
-)
+import "encoding/json"
 
 type Result struct {
-	JSON            json.RawMessage
-	GeneratedTokens int
-	TotalTime       time.Duration
+	JSON      json.RawMessage `json:"json"`
+	Metrics   Metrics         `json:"metrics"`
+	ChunkRuns []ChunkMetrics  `json:"chunk_runs"`
 }

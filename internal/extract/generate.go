@@ -5,16 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/duffy1001/glean/llama"
 )
 
 var errPromptTooLong = errors.New("prompt exceeds context budget")
 
-func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32) (string, int, bool, error) {
+type generationOutput struct {
+	raw      string
+	hitLimit bool
+	metrics  Metrics
+}
+
+func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32) (generationOutput, error) {
 	if err := ctx.Err(); err != nil {
-		return "", 0, false, err
+		return generationOutput{}, err
 	}
+	var output generationOutput
+	promptStart := time.Now()
 	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
 
 	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
@@ -25,31 +34,41 @@ func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string,
 
 	prompt, err := m.ChatApplyTemplate(systemMsg, userMsg, true)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("chat template: %w", err)
+		return output, fmt.Errorf("chat template: %w", err)
 	}
+	output.metrics.PromptBuildTime = time.Since(promptStart)
 
+	tokenizeStart := time.Now()
 	tokens, err := m.Tokenize(prompt, false, true)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("tokenize: %w", err)
+		return output, fmt.Errorf("tokenize: %w", err)
 	}
+	output.metrics.TokenizeTime = time.Since(tokenizeStart)
+	output.metrics.PromptTokens = len(tokens)
 	if len(tokens)+maxTokens > nCtx {
-		return "", 0, false, fmt.Errorf("%w: prompt %d + generation %d > context %d", errPromptTooLong, len(tokens), maxTokens, nCtx)
+		return output, fmt.Errorf("%w: prompt %d + generation %d > context %d", errPromptTooLong, len(tokens), maxTokens, nCtx)
 	}
 
+	prefillStart := time.Now()
 	if err := m.Decode(tokens); err != nil {
-		return "", 0, false, fmt.Errorf("decode prompt: %w", err)
+		return output, fmt.Errorf("decode prompt: %w", err)
 	}
+	output.metrics.PrefillTime = time.Since(prefillStart)
 
 	var result strings.Builder
-	generated := 0
+	generationStart := time.Now()
 
 	for i := 0; i < maxTokens; i++ {
 		if i%16 == 0 {
 			if err := ctx.Err(); err != nil {
-				return "", generated, false, err
+				output.metrics.GenerationTime = time.Since(generationStart)
+				return output, err
 			}
 		}
 		tok := m.SampleNext()
+		if i == 0 {
+			output.metrics.TimeToFirstToken = time.Since(generationStart)
+		}
 
 		if tok == eos {
 			break
@@ -58,18 +77,20 @@ func generateOne(ctx context.Context, m *llama.Model, schema, chunkInput string,
 		piece := m.TokenToPiece(tok)
 		result.WriteString(piece)
 		m.AcceptToken(tok)
-		generated++
+		output.metrics.GeneratedTokens++
 
 		tokBatch := []int32{tok}
 		if err := m.Decode(tokBatch); err != nil {
-			return "", generated, false, fmt.Errorf("decode step %d: %w", i, err)
+			output.metrics.GenerationTime = time.Since(generationStart)
+			return output, fmt.Errorf("decode step %d: %w", i, err)
 		}
 	}
+	output.metrics.GenerationTime = time.Since(generationStart)
 
-	raw := strings.TrimSpace(result.String())
-	if raw == "" {
-		return "", generated, generated == maxTokens, fmt.Errorf("empty output")
+	output.raw = strings.TrimSpace(result.String())
+	output.hitLimit = output.metrics.GeneratedTokens == maxTokens
+	if output.raw == "" {
+		return output, fmt.Errorf("empty output")
 	}
-
-	return raw, generated, generated == maxTokens, nil
+	return output, nil
 }
