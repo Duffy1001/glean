@@ -127,6 +127,8 @@ jobs:
         shell: msys2 {0}
         env:
           CMAKE_EXTRA_ARGS: -G Ninja
+          CFLAGS: -D_WIN32_WINNT=0x0602 -DWINVER=0x0602
+          CXXFLAGS: -D_WIN32_WINNT=0x0602 -DWINVER=0x0602
         run: make build-llama build-bridge
       - name: Build editions
         shell: msys2 {0}
