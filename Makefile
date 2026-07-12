@@ -1,8 +1,6 @@
-.PHONY: all clean clean-native setup build-llama build-bridge build-go test static release
+.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go test static release
 
 LLAMA_DIR := llama.cpp
-LLAMA_REPO ?= https://github.com/ggml-org/llama.cpp.git
-LLAMA_REF  ?= e3546c7948e3af463d0b401e6421d5a4c2faf565
 BUILD_DIR := build
 CBRIDGE_DIR := cbridge
 CGO_CFLAGS := -I$(CURDIR)/$(LLAMA_DIR)/include -I$(CURDIR)/$(LLAMA_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/ggml/src -I$(CURDIR)/$(BUILD_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/common -I$(CURDIR)/$(CBRIDGE_DIR)
@@ -47,17 +45,9 @@ BRIDGE_OBJ := $(CBRIDGE_DIR)/schema_bridge.o
 all: build-go
 
 setup:
-	@if [ ! -d "$(LLAMA_DIR)/.git" ]; then \
-		echo "Cloning llama.cpp..."; \
-		git clone --depth 1 $(LLAMA_REPO) $(LLAMA_DIR); \
-		cd $(LLAMA_DIR) && git fetch --depth 1 origin $(LLAMA_REF) && git checkout $(LLAMA_REF); \
-	else \
-		echo "llama.cpp already present"; \
-	fi
+	git submodule update --init --recursive
 
-build-llama: $(LLAMA_LIBS)
-
-$(BUILD_DIR)/CMakeCache.txt: $(LLAMA_DIR)/CMakeLists.txt
+configure-llama: setup
 	cmake -S $(LLAMA_DIR) -B $(BUILD_DIR) \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DLLAMA_CURL=OFF \
@@ -65,20 +55,29 @@ $(BUILD_DIR)/CMakeCache.txt: $(LLAMA_DIR)/CMakeLists.txt
 		-DLLAMA_BUILD_EXAMPLES=OFF \
 		-DLLAMA_BUILD_SERVER=OFF \
 		-DBUILD_SHARED_LIBS=OFF \
-		-DGGML_OPENMP=OFF
+		-DGGML_OPENMP=OFF \
+		-DGGML_NATIVE=OFF \
+		-DGGML_BACKEND_DL=OFF \
+		-DGGML_METAL=OFF \
+		-DGGML_BLAS=OFF \
+		-DGGML_ACCELERATE=OFF \
+		-DGGML_AVX=OFF \
+		-DGGML_AVX2=OFF \
+		-DGGML_AVX_VNNI=OFF \
+		-DGGML_BMI2=OFF \
+		-DGGML_FMA=OFF \
+		-DGGML_F16C=OFF
 
-$(LLAMA_LIBS): $(BUILD_DIR)/CMakeCache.txt
+build-llama: configure-llama
 	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama common ggml
 
-build-bridge: $(BRIDGE_OBJ)
-
-$(BRIDGE_OBJ): $(CBRIDGE_DIR)/schema_bridge.cpp $(CBRIDGE_DIR)/schema_bridge.h
+build-bridge: setup
 	$(CXX) -c -O2 -std=c++17 \
 		-I$(CURDIR)/$(LLAMA_DIR)/include \
 		-I$(CURDIR)/$(LLAMA_DIR)/common \
 		-I$(CURDIR)/$(LLAMA_DIR)/ggml/include \
 		$(VENDOR_INC) \
-		$< -o $@
+		$(CBRIDGE_DIR)/schema_bridge.cpp -o $(BRIDGE_OBJ)
 
 build-go: build-llama build-bridge
 	CGO_ENABLED=1 go build -o glean .
@@ -86,7 +85,7 @@ build-go: build-llama build-bridge
 static: build-llama build-bridge
 	CGO_ENABLED=1 go build -ldflags '-s -w -extldflags=-static' -tags 'osusergo netgo' -o glean-static .
 
-test: build-bridge
+test: build-llama build-bridge
 	go test -v ./...
 
 clean-native:

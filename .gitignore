@@ -8,11 +8,10 @@ glean
 glean-static
 glean.exe
 
-# Vendored llama.cpp source (clone via: make setup)
-llama.cpp/
-
 # Downloaded models
 models/
+assets/*.gguf
+assets/*.gguf.zst
 
 # OS/editor cruft
 .DS_Store
