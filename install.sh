@@ -25,6 +25,10 @@ case "$(uname -m)" in
     arm64|aarch64) arch=arm64 ;;
     *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
+if [ "$os" = darwin ] && [ "$arch" = amd64 ]; then
+    echo "Prebuilt macOS releases currently require Apple Silicon." >&2
+    exit 1
+fi
 
 if [ -n "${GLEAN_INSTALL_DIR:-}" ]; then
     install_dir=$GLEAN_INSTALL_DIR

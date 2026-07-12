@@ -221,7 +221,7 @@ Each supported platform has four release assets:
 Asset names follow `glean-{thin|full}-{fast|high}-{os}-{arch}` with `.exe` on
 Windows. The installer always installs the selected asset as `glean`.
 Published SHA-256 values are in `checksums.txt`. Current release targets are
-Linux amd64/arm64, macOS amd64/arm64, and Windows amd64.
+Linux amd64/arm64, macOS arm64, and Windows amd64.
 
 The amd64 CPU build targets an AVX2, BMI2, FMA, and F16C baseline. ARM builds
 are produced natively for their target architecture.
