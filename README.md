@@ -266,7 +266,7 @@ make
 ```
 
 `make setup` checks out the pinned llama.cpp revision. The resulting executable
-is `./glean`.
+is `./bin/glean`.
 
 Run unit tests:
 

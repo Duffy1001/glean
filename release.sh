@@ -26,10 +26,10 @@ build_variant() {
     model=$2
     if [ "$os" = linux ]; then
         make VERSION="$version" "static-${package}-${model}"
-        cp "glean-${package}-${model}-static" "dist/glean-${package}-${model}-${os}-${arch}"
+        cp "bin/glean-${package}-${model}-static" "dist/glean-${package}-${model}-${os}-${arch}"
     else
         make VERSION="$version" "build-${package}-${model}"
-        cp "glean-${package}-${model}" "dist/glean-${package}-${model}-${os}-${arch}"
+        cp "bin/glean-${package}-${model}" "dist/glean-${package}-${model}-${os}-${arch}"
     fi
 }
 

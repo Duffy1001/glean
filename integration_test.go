@@ -12,7 +12,7 @@ import (
 func TestEndToEndExtraction(t *testing.T) {
 	input := "John Doe, age 35, works at Acme Corp as a software engineer. Contact: john@example.com."
 
-	cmd := exec.Command("./glean", "--model", "fast", "--max-tokens", "200", "--fields", "name,age,employer,contact")
+	cmd := exec.Command("./bin/glean", "--model", "fast", "--max-tokens", "200", "--fields", "name,age,employer,contact")
 	cmd.Stdin = strings.NewReader(input)
 
 	out, err := cmd.Output()
@@ -35,7 +35,7 @@ func TestEndToEndExtraction(t *testing.T) {
 func TestEndToEndDefaultSchema(t *testing.T) {
 	input := "Server db-01 is running normally, 14 days uptime, no errors detected."
 
-	cmd := exec.Command("./glean", "--model", "fast", "--max-tokens", "200")
+	cmd := exec.Command("./bin/glean", "--model", "fast", "--max-tokens", "200")
 	cmd.Stdin = strings.NewReader(input)
 
 	out, err := cmd.Output()
@@ -65,7 +65,7 @@ func TestEndToEndCustomSchemaWithEnum(t *testing.T) {
 		"required": ["title", "category"]
 	}`
 
-	cmd := exec.Command("./glean", "--model", "fast", "--max-tokens", "200", "--schema", "/dev/stdin")
+	cmd := exec.Command("./bin/glean", "--model", "fast", "--max-tokens", "200", "--schema", "/dev/stdin")
 	schemaReader := strings.NewReader(schema)
 	combined := schemaReader.String() + "\n---\nThis is a blog post about Go programming."
 	cmd.Stdin = strings.NewReader(combined)
