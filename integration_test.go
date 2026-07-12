@@ -97,3 +97,76 @@ func TestEndToEndCustomSchemaWithEnum(t *testing.T) {
 		t.Errorf("category %q not in enum", category)
 	}
 }
+
+func TestVersionOutput(t *testing.T) {
+	cmd := exec.Command("./bin/glean", "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("glean --version failed: %v", err)
+	}
+	line := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(line, "glean ") {
+		t.Fatalf("unexpected version output: %q", line)
+	}
+	if !strings.Contains(line, "(") || !strings.HasSuffix(line, ")") {
+		t.Fatalf("version output missing variant in parentheses: %q", line)
+	}
+}
+
+func TestReportJSONStructure(t *testing.T) {
+	cmd := exec.Command("./bin/glean", "--report")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("glean --report failed: %v", err)
+	}
+
+	var report map[string]interface{}
+	if err := json.Unmarshal(out, &report); err != nil {
+		t.Fatalf("report is not valid JSON: %v\noutput: %s", err, string(out))
+	}
+
+	for _, key := range []string{
+		"version", "variant", "os", "architecture",
+		"expected_accelerator", "acceleration_ready",
+		"default_device", "backends", "devices",
+	} {
+		if _, ok := report[key]; !ok {
+			t.Errorf("missing key %q in report: %s", key, string(out))
+		}
+	}
+}
+
+func TestEmptyStdinExitsNonzero(t *testing.T) {
+	cmd := exec.Command("./bin/glean", "--fields", "name")
+	cmd.Stdin = strings.NewReader("")
+
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
+	if err == nil {
+		t.Fatal("expected nonzero exit for empty stdin")
+	}
+	if len(strings.TrimSpace(string(out))) > 0 {
+		t.Errorf("expected empty stdout, got: %q", string(out))
+	}
+	if !strings.Contains(stderr.String(), "No input") {
+		t.Errorf("expected error message on stderr, got: %q", stderr.String())
+	}
+}
+
+func TestStdoutIsJSONOnly(t *testing.T) {
+	input := "Alice is 30 years old"
+	cmd := exec.Command("./bin/glean", "--model", "fast", "--max-tokens", "200", "--fields", "name,age")
+	cmd.Stdin = strings.NewReader(input)
+
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("glean failed: %v", err)
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\noutput: %s", err, string(out))
+	}
+}

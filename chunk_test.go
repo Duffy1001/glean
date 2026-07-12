@@ -96,6 +96,28 @@ func TestSchemaHasRootType(t *testing.T) {
 	}
 }
 
+func TestSchemaHasRootTypeVariants(t *testing.T) {
+	tests := []struct {
+		schema string
+		wanted string
+		want   bool
+	}{
+		{`{"type":"array"}`, "array", true},
+		{`{"type":"object"}`, "array", false},
+		{`{"type":["array","null"]}`, "array", true},
+		{`{"type":["object","null"]}`, "array", false},
+		{`{"type":["string","array"]}`, "array", true},
+		{`{"properties":{}}`, "array", false},
+		{`{"type":42}`, "array", false},
+	}
+	for _, tc := range tests {
+		got := schemaHasRootType(tc.schema, tc.wanted)
+		if got != tc.want {
+			t.Errorf("schemaHasRootType(%q, %q) = %v, want %v", tc.schema, tc.wanted, got, tc.want)
+		}
+	}
+}
+
 func TestDecodeDelimiter(t *testing.T) {
 	got, err := decodeDelimiter(`\n`)
 	if err != nil || got != "\n" {
@@ -115,6 +137,43 @@ func TestDecodeDelimiter(t *testing.T) {
 	}
 	if _, err := decodeDelimiter(``); err == nil {
 		t.Fatal("empty delimiter should fail")
+	}
+}
+
+func TestDecodeDelimiterMultiCharacter(t *testing.T) {
+	got, err := decodeDelimiter(`||`)
+	if err != nil || got != "||" {
+		t.Fatalf("multi-char delimiter: %q, %v", got, err)
+	}
+	got, err = decodeDelimiter(`\n\t`)
+	if err != nil || got != "\n\t" {
+		t.Fatalf("combined escapes: %q, %v", got, err)
+	}
+	got, err = decodeDelimiter(`--`)
+	if err != nil || got != "--" {
+		t.Fatalf("literal dashes: %q, %v", got, err)
+	}
+}
+
+func TestDecodeDelimiterTrailingEscape(t *testing.T) {
+	if _, err := decodeDelimiter(`\`); err == nil {
+		t.Fatal("trailing escape should fail")
+	}
+}
+
+func TestEmitBufferedArrayEmpty(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	if err := emitBufferedArray(nil, true); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	out, _ := io.ReadAll(r)
+	if strings.TrimSpace(string(out)) != "[]" {
+		t.Fatalf("empty array output: %q", string(out))
 	}
 }
 
