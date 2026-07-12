@@ -5,7 +5,9 @@ build/
 
 # Compiled binaries
 glean
+glean-full
 glean-static
+glean-full-static
 glean.exe
 
 # Downloaded models

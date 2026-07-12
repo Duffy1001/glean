@@ -69,20 +69,24 @@ func resolveModel(choice string, verbose bool) (string, error) {
 	}
 
 	path := filepath.Join(cacheDir, info.Filename)
-	if fi, err := os.Stat(path); err == nil && fi.Size() == info.Size {
+	valid, err := verifyModel(path, info)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("verify cached model: %w", err)
+	}
+	if valid {
 		return path, nil
 	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("remove invalid cached model: %w", err)
+	}
 
-	return downloadModel(info, path, verbose)
+	return materializeModel(info, path, verbose)
 }
 
 func downloadModel(info ModelInfo, dest string, verbose bool) (string, error) {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Downloading %s (%s)...\n", info.Name, humanSize(info.Size))
 	}
-
-	tmp := dest + ".tmp"
-	defer os.Remove(tmp)
 
 	resp, err := http.Get(info.URL)
 	if err != nil {
@@ -94,34 +98,70 @@ func downloadModel(info ModelInfo, dest string, verbose bool) (string, error) {
 		return "", fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	f, err := os.Create(tmp)
+	n, err := installModel(dest, info, resp.Body)
 	if err != nil {
-		return "", err
-	}
-
-	h := sha256.New()
-	w := io.MultiWriter(f, h)
-
-	n, err := io.Copy(w, resp.Body)
-	f.Close()
-	if err != nil {
-		os.Remove(tmp)
-		return "", fmt.Errorf("download interrupted: %w", err)
-	}
-
-	got := hex.EncodeToString(h.Sum(nil))
-	if got != info.SHA256 {
-		os.Remove(tmp)
-		return "", fmt.Errorf("checksum mismatch: got %s, want %s", got, info.SHA256)
+		return "", fmt.Errorf("download model: %w", err)
 	}
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Downloaded %s (%s, %d bytes)\n", info.Name, humanSize(n), n)
 	}
-	if err := os.Rename(tmp, dest); err != nil {
-		return "", err
-	}
 	return dest, nil
+}
+
+func verifyModel(path string, info ModelInfo) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return false, err
+	}
+	if stat.Size() != info.Size {
+		return false, nil
+	}
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false, err
+	}
+	return hex.EncodeToString(h.Sum(nil)) == info.SHA256, nil
+}
+
+func installModel(dest string, info ModelInfo, src io.Reader) (int64, error) {
+	tmp, err := os.CreateTemp(filepath.Dir(dest), info.Filename+".tmp-*")
+	if err != nil {
+		return 0, err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	h := sha256.New()
+	n, copyErr := io.Copy(io.MultiWriter(tmp, h), src)
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		return n, copyErr
+	}
+	if closeErr != nil {
+		return n, closeErr
+	}
+	if n != info.Size {
+		return n, fmt.Errorf("size mismatch: got %d, want %d", n, info.Size)
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != info.SHA256 {
+		return n, fmt.Errorf("checksum mismatch: got %s, want %s", got, info.SHA256)
+	}
+	if err := os.Rename(tmpPath, dest); err != nil {
+		if valid, verifyErr := verifyModel(dest, info); verifyErr == nil && valid {
+			return n, nil
+		}
+		return n, err
+	}
+	return n, nil
 }
 
 func humanSize(b int64) string {

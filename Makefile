@@ -1,8 +1,10 @@
-.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go test static release
+.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-full prepare-model test static static-full release
 
 LLAMA_DIR := llama.cpp
 BUILD_DIR := build
 CBRIDGE_DIR := cbridge
+VERSION ?= dev
+GO_LDFLAGS := -s -w -X main.version=$(VERSION)
 CGO_CFLAGS := -I$(CURDIR)/$(LLAMA_DIR)/include -I$(CURDIR)/$(LLAMA_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/ggml/src -I$(CURDIR)/$(BUILD_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/common -I$(CURDIR)/$(CBRIDGE_DIR)
 VENDOR_INC := -I$(CURDIR)/$(LLAMA_DIR)/vendor
 
@@ -61,12 +63,11 @@ configure-llama: setup
 		-DGGML_METAL=OFF \
 		-DGGML_BLAS=OFF \
 		-DGGML_ACCELERATE=OFF \
-		-DGGML_AVX=OFF \
-		-DGGML_AVX2=OFF \
-		-DGGML_AVX_VNNI=OFF \
-		-DGGML_BMI2=OFF \
-		-DGGML_FMA=OFF \
-		-DGGML_F16C=OFF
+		-DGGML_AVX=ON \
+		-DGGML_AVX2=ON \
+		-DGGML_BMI2=ON \
+		-DGGML_FMA=ON \
+		-DGGML_F16C=ON
 
 build-llama: configure-llama
 	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama common ggml
@@ -80,16 +81,25 @@ build-bridge: setup
 		$(CBRIDGE_DIR)/schema_bridge.cpp -o $(BRIDGE_OBJ)
 
 build-go: build-llama build-bridge
-	CGO_ENABLED=1 go build -o glean .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o glean .
+
+prepare-model:
+	./scripts/prepare-embedded-model.sh
+
+build-full: build-llama build-bridge prepare-model
+	CGO_ENABLED=1 go build -tags embedded -ldflags '$(GO_LDFLAGS)' -o glean-full .
 
 static: build-llama build-bridge
-	CGO_ENABLED=1 go build -ldflags '-s -w -extldflags=-static' -tags 'osusergo netgo' -o glean-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo' -o glean-static .
+
+static-full: build-llama build-bridge prepare-model
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo embedded' -o glean-full-static .
 
 test: build-llama build-bridge
 	go test -v ./...
 
 clean-native:
-	rm -f glean glean-static $(BRIDGE_OBJ)
+	rm -f glean glean-full glean-static glean-full-static $(BRIDGE_OBJ)
 
 clean:
-	rm -rf $(BUILD_DIR) $(BRIDGE_OBJ) glean glean-static dist
+	rm -rf $(BUILD_DIR) $(BRIDGE_OBJ) glean glean-full glean-static glean-full-static dist

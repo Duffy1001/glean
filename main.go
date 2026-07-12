@@ -36,7 +36,12 @@ func main() {
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	verbose := flag.Bool("verbose", false, "Show llama.cpp debug output")
 	pkField := flag.String("pk", "", "Primary key field for dedup/merge (default: first field with --fields)")
+	showVersion := flag.Bool("version", false, "Show version and build edition")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("glean %s (%s)\n", version, buildEdition())
+		return
+	}
 
 	if *verbose {
 		llama.SetLogLevel(1)
