@@ -132,4 +132,4 @@ clean-native:
 	rm -rf $(BIN_DIR) $(BRIDGE_OBJ) $(BACKEND_OBJ)
 
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR) $(BRIDGE_OBJ) $(BACKEND_OBJ) glean glean-*-fast glean-*-high glean-static glean-*-static dist
+	rm -rf $(BUILD_DIR) $(BIN_DIR) $(BRIDGE_OBJ) $(BACKEND_OBJ) glean glean-*-fast glean-static glean-*-static dist
