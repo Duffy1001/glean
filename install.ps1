@@ -1,13 +1,15 @@
 param(
     [ValidateSet("thin", "full")]
     [string]$Variant = "thin",
+    [ValidateSet("fast", "high")]
+    [string]$Model = "fast",
     [string]$InstallDir = "$env:LOCALAPPDATA\Programs\glean",
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
 $repo = "duffy1001/glean"
-$asset = "glean-$Variant-windows-amd64.exe"
+$asset = "glean-$Variant-$Model-windows-amd64.exe"
 $dest = Join-Path $InstallDir "glean.exe"
 
 if ((Test-Path $dest) -and -not $Force) {
@@ -31,7 +33,7 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     $binary = Join-Path $tmp $asset
     $checksums = Join-Path $tmp "checksums.txt"
-    Write-Host "Downloading glean $($release.tag_name) $Variant (windows/amd64)..."
+    Write-Host "Downloading glean $($release.tag_name) $Variant-$Model (windows/amd64)..."
     Invoke-WebRequest $binaryAsset.browser_download_url -OutFile $binary
     Invoke-WebRequest $checksumAsset.browser_download_url -OutFile $checksums
 

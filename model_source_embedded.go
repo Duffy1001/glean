@@ -11,18 +11,15 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-//go:embed assets/qwen3-0.6b-q4_k_m.gguf.zst
-var embeddedFastModel []byte
-
 func materializeModel(info ModelInfo, dest string, verbose bool) (string, error) {
-	if info.Filename != modelRegistry["fast"].Filename {
+	if info.Filename != embeddedModelFilename() {
 		return downloadModel(info, dest, verbose)
 	}
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Extracting embedded %s...\n", info.Name)
 	}
 
-	decoder, err := zstd.NewReader(bytes.NewReader(embeddedFastModel))
+	decoder, err := zstd.NewReader(bytes.NewReader(embeddedModel))
 	if err != nil {
 		return "", fmt.Errorf("open embedded model: %w", err)
 	}
@@ -31,8 +28,4 @@ func materializeModel(info ModelInfo, dest string, verbose bool) (string, error)
 		return "", fmt.Errorf("extract embedded model: %w", err)
 	}
 	return dest, nil
-}
-
-func buildEdition() string {
-	return "full"
 }

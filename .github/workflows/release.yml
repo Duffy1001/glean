@@ -17,12 +17,12 @@ jobs:
           submodules: recursive
       - name: Install zstd
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
-      - name: Prepare embedded model
-        run: ./scripts/prepare-embedded-model.sh
+      - name: Prepare embedded models
+        run: ./scripts/prepare-embedded-model.sh all
       - uses: actions/upload-artifact@v4
         with:
           name: embedded-model
-          path: assets/qwen3-0.6b-q4_k_m.gguf.zst
+          path: assets/*.gguf.zst
           retention-days: 1
 
   unix:
@@ -76,17 +76,23 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ matrix.os }}" = linux ]; then
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo" -o "dist/glean-thin-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo embedded" -o "dist/glean-full-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo high" -o "dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo embedded" -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo embedded high" -o "dist/glean-full-high-${{ matrix.os }}-${{ matrix.arch }}" .
           else
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o "dist/glean-thin-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags embedded -o "dist/glean-full-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags high -o "dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags embedded -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "embedded high" -o "dist/glean-full-high-${{ matrix.os }}-${{ matrix.arch }}" .
           fi
       - name: Verify artifacts
         run: |
           file dist/glean-*
-          dist/glean-thin-${{ matrix.os }}-${{ matrix.arch }} --version
-          dist/glean-full-${{ matrix.os }}-${{ matrix.arch }} --version
+          dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --version
+          dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }} --version
+          dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }} --version
+          dist/glean-full-high-${{ matrix.os }}-${{ matrix.arch }} --version
           if [ "${{ matrix.os }}" = linux ]; then
             ! readelf -d dist/glean-* | grep NEEDED
           else
@@ -127,8 +133,8 @@ jobs:
         shell: msys2 {0}
         env:
           CMAKE_EXTRA_ARGS: -G Ninja
-          CFLAGS: -D_WIN32_WINNT=0x0602 -DWINVER=0x0602
-          CXXFLAGS: -D_WIN32_WINNT=0x0602 -DWINVER=0x0602
+          CFLAGS: -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
+          CXXFLAGS: -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
         run: make build-llama build-bridge
       - name: Build editions
         shell: msys2 {0}
@@ -136,14 +142,18 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p dist
-          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -o dist/glean-thin-windows-amd64.exe .
-          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags embedded -o dist/glean-full-windows-amd64.exe .
+          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -o dist/glean-thin-fast-windows-amd64.exe .
+          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags high -o dist/glean-thin-high-windows-amd64.exe .
+          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags embedded -o dist/glean-full-fast-windows-amd64.exe .
+          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "embedded high" -o dist/glean-full-high-windows-amd64.exe .
       - name: Verify artifacts
         shell: msys2 {0}
         run: |
           file dist/*.exe
-          dist/glean-thin-windows-amd64.exe --version
-          dist/glean-full-windows-amd64.exe --version
+          dist/glean-thin-fast-windows-amd64.exe --version
+          dist/glean-thin-high-windows-amd64.exe --version
+          dist/glean-full-fast-windows-amd64.exe --version
+          dist/glean-full-high-windows-amd64.exe --version
           ! objdump -p dist/*.exe | grep 'DLL Name' | grep -viE '(KERNEL32|msvcrt|USER32|ADVAPI32|WS2_32|bcrypt|ntdll)'
       - uses: actions/upload-artifact@v4
         with:

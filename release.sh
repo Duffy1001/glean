@@ -3,8 +3,8 @@ set -eu
 
 variant=${1:-all}
 case "$variant" in
-    thin|full|all) ;;
-    *) echo "Usage: $0 [thin|full|all]" >&2; exit 1 ;;
+    thin-fast|thin-high|full-fast|full-high|all) ;;
+    *) echo "Usage: $0 [thin-fast|thin-high|full-fast|full-high|all]" >&2; exit 1 ;;
 esac
 
 case "$(uname -s)" in
@@ -21,30 +21,24 @@ esac
 version=${VERSION:-$(git describe --tags --always --dirty)}
 mkdir -p dist
 
-build_thin() {
+build_variant() {
+    package=$1
+    model=$2
     if [ "$os" = linux ]; then
-        make VERSION="$version" static
-        cp glean-static "dist/glean-thin-${os}-${arch}"
+        make VERSION="$version" "static-${package}-${model}"
+        cp "glean-${package}-${model}-static" "dist/glean-${package}-${model}-${os}-${arch}"
     else
-        make VERSION="$version" build-go
-        cp glean "dist/glean-thin-${os}-${arch}"
-    fi
-}
-
-build_full() {
-    if [ "$os" = linux ]; then
-        make VERSION="$version" static-full
-        cp glean-full-static "dist/glean-full-${os}-${arch}"
-    else
-        make VERSION="$version" build-full
-        cp glean-full "dist/glean-full-${os}-${arch}"
+        make VERSION="$version" "build-${package}-${model}"
+        cp "glean-${package}-${model}" "dist/glean-${package}-${model}-${os}-${arch}"
     fi
 }
 
 case "$variant" in
-    thin) build_thin ;;
-    full) build_full ;;
-    all) build_thin; build_full ;;
+    thin-fast) build_variant thin fast ;;
+    thin-high) build_variant thin high ;;
+    full-fast) build_variant full fast ;;
+    full-high) build_variant full high ;;
+    all) build_variant thin fast; build_variant thin high; build_variant full fast; build_variant full high ;;
 esac
 
 if command -v sha256sum >/dev/null 2>&1; then

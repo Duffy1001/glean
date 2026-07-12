@@ -1,4 +1,4 @@
-.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-full prepare-model test static static-full release
+.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-thin-fast build-thin-high build-full-fast build-full-high prepare-fast prepare-high prepare-models test static static-thin-fast static-thin-high static-full-fast static-full-high release
 
 LLAMA_DIR := llama.cpp
 BUILD_DIR := build
@@ -85,23 +85,46 @@ build-bridge: setup
 build-go: build-llama build-bridge
 	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o glean .
 
-prepare-model:
-	./scripts/prepare-embedded-model.sh
+build-thin-fast: build-llama build-bridge
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o glean-thin-fast .
 
-build-full: build-llama build-bridge prepare-model
-	CGO_ENABLED=1 go build -tags embedded -ldflags '$(GO_LDFLAGS)' -o glean-full .
+build-thin-high: build-llama build-bridge
+	CGO_ENABLED=1 go build -tags high -ldflags '$(GO_LDFLAGS)' -o glean-thin-high .
+
+prepare-fast:
+	./scripts/prepare-embedded-model.sh fast
+
+prepare-high:
+	./scripts/prepare-embedded-model.sh high
+
+prepare-models: prepare-fast prepare-high
+
+build-full-fast: build-llama build-bridge prepare-fast
+	CGO_ENABLED=1 go build -tags embedded -ldflags '$(GO_LDFLAGS)' -o glean-full-fast .
+
+build-full-high: build-llama build-bridge prepare-high
+	CGO_ENABLED=1 go build -tags 'embedded high' -ldflags '$(GO_LDFLAGS)' -o glean-full-high .
 
 static: build-llama build-bridge
 	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo' -o glean-static .
 
-static-full: build-llama build-bridge prepare-model
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo embedded' -o glean-full-static .
+static-thin-fast: build-llama build-bridge
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo' -o glean-thin-fast-static .
+
+static-thin-high: build-llama build-bridge
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo high' -o glean-thin-high-static .
+
+static-full-fast: build-llama build-bridge prepare-fast
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo embedded' -o glean-full-fast-static .
+
+static-full-high: build-llama build-bridge prepare-high
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo embedded high' -o glean-full-high-static .
 
 test: build-llama build-bridge
 	go test -v ./...
 
 clean-native:
-	rm -f glean glean-full glean-static glean-full-static $(BRIDGE_OBJ)
+	rm -f glean glean-*-fast glean-*-high glean-static glean-*-static $(BRIDGE_OBJ)
 
 clean:
-	rm -rf $(BUILD_DIR) $(BRIDGE_OBJ) glean glean-full glean-static glean-full-static dist
+	rm -rf $(BUILD_DIR) $(BRIDGE_OBJ) glean glean-*-fast glean-*-high glean-static glean-*-static dist

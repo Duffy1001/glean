@@ -6,9 +6,10 @@ dist/
 
 # Compiled binaries
 glean
-glean-full
+glean-*-fast
+glean-*-high
 glean-static
-glean-full-static
+glean-*-static
 glean.exe
 
 # Downloaded models

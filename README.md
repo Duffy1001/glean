@@ -42,11 +42,11 @@ Install the latest thin release on Linux or macOS:
 curl -fsSL https://raw.githubusercontent.com/duffy1001/glean/master/install.sh | sh
 ```
 
-Install the full edition with the fast model included:
+Install the full-fast edition, which includes the fast model:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/duffy1001/glean/master/install.sh |
-  GLEAN_VARIANT=full sh
+  GLEAN_VARIANT=full GLEAN_MODEL=fast sh
 ```
 
 The installer supports `amd64` and `arm64`, verifies the release checksum, and
@@ -60,14 +60,14 @@ On Windows PowerShell:
 irm https://raw.githubusercontent.com/duffy1001/glean/master/install.ps1 | iex
 ```
 
-To install the full Windows edition, download `install.ps1` and invoke it with
-`-Variant full`.
+To install the full-high Windows edition, download `install.ps1` and invoke it
+with `-Variant full -Model high`.
 
-The thin edition downloads the selected model on first use. The full edition
-contains the fast model and works offline; on first use it extracts a verified
-copy to the model cache so llama.cpp can memory-map it. Selecting
-`--model quality` still downloads the larger quality model. Run with
-`--verbose` to see model loading, extraction, and download status.
+Thin editions download their default model on first use. Full editions include
+their matching model and work offline; on first use they extract a verified
+copy to the model cache so llama.cpp can memory-map it. Selecting a different
+model with `--model` downloads that model. Run with `--verbose` to see model
+loading, extraction, and download status.
 
 ## Usage
 
@@ -206,14 +206,17 @@ Downloads are SHA-256 verified and cached under:
 
 ## Release Editions
 
-Each supported platform has two release assets:
+Each supported platform has four release assets:
 
-| Edition | Typical size | Model behavior |
+| Edition | Default CLI model | Typical size | Model behavior |
 | --- | ---: | --- |
-| `thin` | about 15 MB | Downloads `fast` or `quality` when first selected |
-| `full` | about 400 MB | Includes `fast`; downloads `quality` only if requested |
+| `thin-fast` | `fast` | about 15 MB | Downloads the fast model on first use |
+| `thin-high` | `quality` | about 15 MB | Downloads the quality model on first use |
+| `full-fast` | `fast` | about 400 MB | Includes the fast model |
+| `full-high` | `quality` | about 1.1 GB | Includes the quality model |
 
-Asset names follow `glean-{thin|full}-{os}-{arch}` with `.exe` on Windows.
+Asset names follow `glean-{thin|full}-{fast|high}-{os}-{arch}` with `.exe` on
+Windows. The installer always installs the selected asset as `glean`.
 Published SHA-256 values are in `checksums.txt`. Current release targets are
 Linux amd64/arm64, macOS amd64/arm64, and Windows amd64.
 
@@ -227,14 +230,14 @@ are produced natively for their target architecture.
 | `--schema FILE` | | JSON Schema used for generation and validation |
 | `--fields LIST` | | Comma-separated string fields for array extraction |
 | `--pk FIELD` | first `--fields` entry, otherwise unset | Primary key used to merge array records |
-| `--model NAME` | `fast` | Model choice: `fast` or `quality` |
+| `--model NAME` | build variant default | Model choice: `fast` or `quality` |
 | `--max-tokens N` | `2048` | Maximum generated tokens per inference chunk |
 | `--ctx N` | `8192` | Model context window |
 | `--threads N` | `4` | CPU inference threads |
 | `--compact` | `false` | Print compact rather than indented JSON |
 | `--no-grammar` | `false` | Disable grammar constraints; validation remains enabled |
 | `--verbose` | `false` | Write progress and native diagnostics to stderr |
-| `--version` | `false` | Print the version and `thin` or `full` edition |
+| `--version` | `false` | Print the version and build variant |
 
 `--schema` takes precedence when both `--schema` and `--fields` are supplied.
 Positional arguments are input file paths. With no positional arguments,
@@ -274,14 +277,17 @@ Build a stripped static Linux executable:
 make static
 ```
 
-Build the full edition. This downloads, verifies, and zstd-compresses the fast
-model into an ignored local asset before linking:
+Build a named edition. Full editions download, verify, and zstd-compress their
+matching model into an ignored local asset before linking:
 
 ```sh
-make build-full
+make build-thin-fast
+make build-thin-high
+make build-full-fast
+make build-full-high
 ```
 
-Build both release editions for the current Linux or macOS platform:
+Build all four release editions for the current Linux or macOS platform:
 
 ```sh
 ./release.sh all

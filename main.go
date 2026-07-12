@@ -28,7 +28,7 @@ var errPromptTooLong = errors.New("prompt exceeds context budget")
 func main() {
 	schemaFile := flag.String("schema", "", "JSON Schema file for constrained output")
 	fields := flag.String("fields", "", "Comma-separated field names for simple schema")
-	modelChoice := flag.String("model", "fast", "Model: fast (0.6B) or quality (1.7B)")
+	modelChoice := flag.String("model", defaultModel(), "Model: fast (0.6B) or quality (1.7B)")
 	maxTokens := flag.Int("max-tokens", 2048, "Maximum tokens to generate")
 	compact := flag.Bool("compact", false, "Output compact JSON")
 	nThreads := flag.Int("threads", 4, "CPU threads")
@@ -39,7 +39,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Show version and build edition")
 	flag.Parse()
 	if *showVersion {
-		fmt.Printf("glean %s (%s)\n", version, buildEdition())
+		fmt.Printf("glean %s (%s)\n", version, buildVariant())
 		return
 	}
 
