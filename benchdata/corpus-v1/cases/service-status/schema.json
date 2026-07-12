@@ -1,0 +1,12 @@
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "host": {"type": "string"},
+      "status": {"type": "string"}
+    },
+    "required": ["host", "status"],
+    "additionalProperties": false
+  }
+}

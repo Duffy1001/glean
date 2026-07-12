@@ -1,0 +1,11 @@
+{
+  "id": "typed-incident",
+  "description": "Extract typed incident fields from a short note.",
+  "tier": "conformance",
+  "tags": ["object", "integer", "boolean"],
+  "delimiter": "\n",
+  "identity_fields": [],
+  "comparison": "positional",
+  "allow_additional_fields": false,
+  "normalizers": {}
+}

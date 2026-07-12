@@ -1,0 +1,4 @@
+[
+  {"host": "db-01", "status": "up"},
+  {"host": "db-02", "status": "down"}
+]

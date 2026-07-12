@@ -1,0 +1,2 @@
+db-01 is up.
+db-02 is down.

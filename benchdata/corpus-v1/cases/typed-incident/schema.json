@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "incident_id": {"type": "string"},
+    "failed_jobs": {"type": "integer"},
+    "mitigation_active": {"type": "boolean"}
+  },
+  "required": ["incident_id", "failed_jobs", "mitigation_active"],
+  "additionalProperties": false
+}

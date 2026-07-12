@@ -1,0 +1,11 @@
+{
+  "id": "people-basic",
+  "description": "Extract ordered people records from newline-delimited prose.",
+  "tier": "conformance",
+  "tags": ["array", "newline", "prose"],
+  "delimiter": "\n",
+  "identity_fields": ["name"],
+  "comparison": "ordered",
+  "allow_additional_fields": false,
+  "normalizers": {}
+}

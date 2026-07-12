@@ -1,0 +1,1 @@
+Incident INC-42 affects checkout. There are 3 failed jobs. Mitigation is active.

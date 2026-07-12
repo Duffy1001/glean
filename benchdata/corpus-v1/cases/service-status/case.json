@@ -1,0 +1,11 @@
+{
+  "id": "service-status",
+  "description": "Extract ordered host status records.",
+  "tier": "conformance",
+  "tags": ["array", "identifier"],
+  "delimiter": "\n",
+  "identity_fields": ["host"],
+  "comparison": "ordered",
+  "allow_additional_fields": false,
+  "normalizers": {}
+}
