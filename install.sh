@@ -1,69 +1,86 @@
 #!/bin/sh
 set -eu
 
-REPO="duffy1001/glean"
-INSTALL_DIR="${GLEAN_INSTALL_DIR:-${HOME}/.local/bin}"
+repo="duffy1001/glean"
+variant="${GLEAN_VARIANT:-thin}"
+force="${GLEAN_FORCE:-0}"
 
-uname_s=$(uname -s)
-uname_m=$(uname -m)
-
-case "$uname_s" in
-    Linux)  os="linux" ;;
-    Darwin) os="darwin" ;;
-    *) echo "Unsupported OS: $uname_s"; exit 1 ;;
+case "$variant" in
+    thin|full) ;;
+    *) echo "GLEAN_VARIANT must be thin or full" >&2; exit 1 ;;
 esac
 
-case "$uname_m" in
-    x86_64)  arch="amd64" ;;
-    aarch64) arch="arm64" ;;
-    arm64)   arch="arm64" ;;
-    *) echo "Unsupported arch: $uname_m"; exit 1 ;;
+case "$(uname -s)" in
+    Linux) os=linux ;;
+    Darwin) os=darwin ;;
+    *) echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    arm64|aarch64) arch=arm64 ;;
+    *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-if command -v glean >/dev/null 2>&1; then
-    current=$(glean --version 2>/dev/null || echo "unknown")
-    echo "glean $current already installed at $(command -v glean)"
-    echo "Reinstall? [y/N] \c"
-    read -r answer
-    case "$answer" in
-        y|Y) ;;
-        *) echo "Aborted."; exit 0 ;;
-    esac
+if [ -n "${GLEAN_INSTALL_DIR:-}" ]; then
+    install_dir=$GLEAN_INSTALL_DIR
+elif [ -w /usr/local/bin ]; then
+    install_dir=/usr/local/bin
+else
+    install_dir="${HOME}/.local/bin"
+fi
+dest="${install_dir}/glean"
+
+if [ -e "$dest" ] && [ "$force" != 1 ]; then
+    current=$($dest --version 2>/dev/null || echo unknown)
+    if [ -r /dev/tty ]; then
+        printf '%s' "${current} is already installed at ${dest}. Replace it? [y/N] " >/dev/tty
+        read -r answer </dev/tty
+        case "$answer" in y|Y) ;; *) echo "Aborted."; exit 0 ;; esac
+    else
+        echo "${dest} already exists; set GLEAN_FORCE=1 to replace it" >&2
+        exit 1
+    fi
 fi
 
-if [ -w /usr/local/bin ]; then
-    INSTALL_DIR="/usr/local/bin"
+latest_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${repo}/releases/latest")
+version=${latest_url##*/}
+case "$version" in
+    v*) ;;
+    *) echo "Could not determine latest release from ${latest_url}" >&2; exit 1 ;;
+esac
+
+asset="glean-${variant}-${os}-${arch}"
+base="https://github.com/${repo}/releases/download/${version}"
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+
+echo "Downloading glean ${version} ${variant} (${os}/${arch})..." >&2
+curl -fL --retry 3 -o "${tmp_dir}/${asset}" "${base}/${asset}"
+curl -fL --retry 3 -o "${tmp_dir}/checksums.txt" "${base}/checksums.txt"
+
+expected=$(awk -v name="$asset" '$2 == name { print $1 }' "${tmp_dir}/checksums.txt")
+if [ -z "$expected" ]; then
+    echo "No checksum published for ${asset}" >&2
+    exit 1
 fi
-
-mkdir -p "$INSTALL_DIR"
-
-latest=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-
-if [ -z "$latest" ]; then
-    echo "Could not determine latest release. Check https://github.com/${REPO}/releases"
+if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "${tmp_dir}/${asset}" | awk '{ print $1 }')
+else
+    actual=$(shasum -a 256 "${tmp_dir}/${asset}" | awk '{ print $1 }')
+fi
+if [ "$actual" != "$expected" ]; then
+    echo "Checksum mismatch for ${asset}" >&2
     exit 1
 fi
 
-url="https://github.com/${REPO}/releases/download/${latest}/glean-${os}-${arch}"
-
-echo "Downloading glean ${latest} (${os}/${arch})..."
-tmp=$(mktemp)
-trap 'rm -f "$tmp"' EXIT
-
-curl -fsSL -o "$tmp" "$url"
-chmod +x "$tmp"
-
-dest="${INSTALL_DIR}/glean"
-mv "$tmp" "$dest"
+mkdir -p "$install_dir"
+chmod 0755 "${tmp_dir}/${asset}"
+mv "${tmp_dir}/${asset}" "$dest"
 trap - EXIT
+rm -rf "$tmp_dir"
 
-echo "Installed to ${dest}"
-
+echo "Installed $($dest --version) to ${dest}" >&2
 case ":$PATH:" in
-    *":${INSTALL_DIR}:"*) ;;
-    *) echo "WARNING: ${INSTALL_DIR} is not in your PATH. Add it:";;
+    *":${install_dir}:"*) ;;
+    *) echo "Add ${install_dir} to PATH." >&2 ;;
 esac
-
-echo ""
-echo "Run: glean --help"
-echo "First run downloads the model (~400MB for fast, ~1.1GB for quality)."

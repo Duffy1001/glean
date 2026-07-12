@@ -38,20 +38,20 @@ var modelRegistry = map[string]ModelInfo{
 
 func modelCacheDir() (string, error) {
 	if dir := os.Getenv("XDG_CACHE_HOME"); dir != "" {
-		return filepath.Join(dir, "jsonify", "models"), nil
+		return filepath.Join(dir, "glean", "models"), nil
 	}
 	if runtime.GOOS == "darwin" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, "Library", "Caches", "jsonify", "models"), nil
+		return filepath.Join(home, "Library", "Caches", "glean", "models"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "jsonify", "models"), nil
+	return filepath.Join(home, ".cache", "glean", "models"), nil
 }
 
 func resolveModel(choice string, verbose bool) (string, error) {

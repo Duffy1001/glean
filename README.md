@@ -36,17 +36,38 @@ printf '%s\n' \
 
 ## Install
 
-Install the latest release on Linux or macOS:
+Install the latest thin release on Linux or macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/duffy1001/glean/master/install.sh | sh
 ```
 
-The installer supports `amd64` and `arm64`. It installs to `/usr/local/bin`
-when writable, otherwise to `~/.local/bin`.
+Install the full edition with the fast model included:
 
-The model is separate from the executable and downloads on first use. Run with
-`--verbose` to see model loading and download status.
+```sh
+curl -fsSL https://raw.githubusercontent.com/duffy1001/glean/master/install.sh |
+  GLEAN_VARIANT=full sh
+```
+
+The installer supports `amd64` and `arm64`, verifies the release checksum, and
+installs to `/usr/local/bin` when writable, otherwise to `~/.local/bin`. Set
+`GLEAN_INSTALL_DIR` to choose another directory or `GLEAN_FORCE=1` for a
+noninteractive replacement.
+
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/duffy1001/glean/master/install.ps1 | iex
+```
+
+To install the full Windows edition, download `install.ps1` and invoke it with
+`-Variant full`.
+
+The thin edition downloads the selected model on first use. The full edition
+contains the fast model and works offline; on first use it extracts a verified
+copy to the model cache so llama.cpp can memory-map it. Selecting
+`--model quality` still downloads the larger quality model. Run with
+`--verbose` to see model loading, extraction, and download status.
 
 ## Usage
 
@@ -179,9 +200,25 @@ glean --model quality --schema schema.json input.txt
 
 Downloads are SHA-256 verified and cached under:
 
-- `$XDG_CACHE_HOME/jsonify/models` when `XDG_CACHE_HOME` is set
-- `~/Library/Caches/jsonify/models` on macOS
-- `~/.cache/jsonify/models` on other platforms
+- `$XDG_CACHE_HOME/glean/models` when `XDG_CACHE_HOME` is set
+- `~/Library/Caches/glean/models` on macOS
+- `~/.cache/glean/models` on other platforms
+
+## Release Editions
+
+Each supported platform has two release assets:
+
+| Edition | Typical size | Model behavior |
+| --- | ---: | --- |
+| `thin` | about 15 MB | Downloads `fast` or `quality` when first selected |
+| `full` | about 400 MB | Includes `fast`; downloads `quality` only if requested |
+
+Asset names follow `glean-{thin|full}-{os}-{arch}` with `.exe` on Windows.
+Published SHA-256 values are in `checksums.txt`. Current release targets are
+Linux amd64/arm64, macOS amd64/arm64, and Windows amd64.
+
+The amd64 CPU build targets an AVX2, BMI2, FMA, and F16C baseline. ARM builds
+are produced natively for their target architecture.
 
 ## Options
 
@@ -197,6 +234,7 @@ Downloads are SHA-256 verified and cached under:
 | `--compact` | `false` | Print compact rather than indented JSON |
 | `--no-grammar` | `false` | Disable grammar constraints; validation remains enabled |
 | `--verbose` | `false` | Write progress and native diagnostics to stderr |
+| `--version` | `false` | Print the version and `thin` or `full` edition |
 
 `--schema` takes precedence when both `--schema` and `--fields` are supplied.
 Positional arguments are input file paths. With no positional arguments,
@@ -234,6 +272,19 @@ Build a stripped static Linux executable:
 
 ```sh
 make static
+```
+
+Build the full edition. This downloads, verifies, and zstd-compresses the fast
+model into an ignored local asset before linking:
+
+```sh
+make build-full
+```
+
+Build both release editions for the current Linux or macOS platform:
+
+```sh
+./release.sh all
 ```
 
 The native build intentionally disables network support, examples, tests,

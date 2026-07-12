@@ -4,6 +4,7 @@ LLAMA_DIR := llama.cpp
 BUILD_DIR := build
 CBRIDGE_DIR := cbridge
 VERSION ?= dev
+CMAKE_EXTRA_ARGS ?=
 GO_LDFLAGS := -s -w -X main.version=$(VERSION)
 CGO_CFLAGS := -I$(CURDIR)/$(LLAMA_DIR)/include -I$(CURDIR)/$(LLAMA_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/ggml/src -I$(CURDIR)/$(BUILD_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/common -I$(CURDIR)/$(CBRIDGE_DIR)
 VENDOR_INC := -I$(CURDIR)/$(LLAMA_DIR)/vendor
@@ -67,7 +68,8 @@ configure-llama: setup
 		-DGGML_AVX2=ON \
 		-DGGML_BMI2=ON \
 		-DGGML_FMA=ON \
-		-DGGML_F16C=ON
+		-DGGML_F16C=ON \
+		$(CMAKE_EXTRA_ARGS)
 
 build-llama: configure-llama
 	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama common ggml

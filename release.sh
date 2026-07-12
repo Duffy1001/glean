@@ -1,114 +1,56 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-# Cross-compilation release script for glean
-# Builds static binaries for multiple platforms.
-#
-# Usage:
-#   ./release.sh                    # build for current platform
-#   ./release.sh linux/amd64        # build for specific target
-#   ./release.sh all                # build all targets
-#
-# Requirements for cross-compilation:
-#   - Docker (for linux/arm64 cross-compile)
-#   - Native build for darwin and windows requires running on that platform
-#
-# Output: dist/glean-<os>-<arch>[.exe]
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DIST_DIR="${SCRIPT_DIR}/dist"
-mkdir -p "${DIST_DIR}"
-
-TARGET="${1:-current}"
-
-build_native() {
-    local os="$1"
-    local arch="$2"
-    local suffix=""
-    [ "$os" = "windows" ] && suffix=".exe"
-    local out="${DIST_DIR}/glean-${os}-${arch}${suffix}"
-
-    echo "=== Building glean-${os}-${arch} (native) ==="
-
-    cd "${SCRIPT_DIR}"
-    make clean-native
-    make static
-
-    if [ "$os" = "windows" ] && [ "$suffix" = ".exe" ]; then
-        mv glean-static "$out"
-    else
-        cp glean-static "$out" 2>/dev/null || cp glean "$out"
-    fi
-
-    echo "Built: $out ($(ls -lh "$out" | awk '{print $5}'))"
-}
-
-build_cross_linux() {
-    local arch="$1"
-    local cc="$2"
-    local cxx="$3"
-    local cmake_toolchain="$4"
-    local suffix=""
-    local out="${DIST_DIR}/glean-linux-${arch}"
-
-    echo "=== Building glean-linux-${arch} (cross-compile via Docker) ==="
-
-    local docker_arch
-    case "$arch" in
-        amd64)  docker_arch="linux/amd64" ;;
-        arm64)  docker_arch="linux/arm64" ;;
-        *)      echo "Unsupported arch: $arch"; return 1 ;;
-    esac
-
-    docker run --rm --platform "$docker_arch" \
-        -v "${SCRIPT_DIR}:/work" -w /work \
-        ubuntu:22.04 bash -c '
-            apt-get update -qq && apt-get install -y -qq \
-                build-essential cmake git g++ > /dev/null 2>&1
-            make clean
-            make static
-            mv glean-static dist/glean-linux-'"${arch}"'
-        '
-
-    echo "Built: $out ($(ls -lh "$out" 2>/dev/null | awk '{print $5}'))"
-}
-
-case "$TARGET" in
-    current)
-        os=$(uname -s | tr '[:upper:]' '[:lower:]')
-        arch=$(uname -m)
-        case "$arch" in
-            x86_64)  arch="amd64" ;;
-            aarch64) arch="arm64" ;;
-        esac
-        build_native "$os" "$arch"
-        ;;
-    linux/amd64)
-        build_cross_linux "amd64" "x86_64-linux-gnu-gcc" "x86_64-linux-gnu-g++" ""
-        ;;
-    linux/arm64)
-        build_cross_linux "arm64" "aarch64-linux-gnu-gcc" "aarch64-linux-gnu-g++" ""
-        ;;
-    all)
-        build_cross_linux "amd64" "" "" ""
-        build_cross_linux "arm64" "" "" ""
-        echo ""
-        echo "NOTE: darwin and windows binaries must be built natively on those platforms."
-        echo "      Run 'make static' on macOS or Windows, then copy to dist/."
-        ;;
-    *)
-        if [[ "$TARGET" =~ ^(.+)/(.+)$ ]]; then
-            echo "Cross-compilation for ${TARGET} requires platform-specific setup."
-            echo "Use 'docker run --platform linux/${TARGET}' or build natively."
-            exit 1
-        else
-            echo "Unknown target: $TARGET"
-            echo "Usage: $0 [current|linux/amd64|linux/arm64|all]"
-            exit 1
-        fi
-        ;;
+variant=${1:-all}
+case "$variant" in
+    thin|full|all) ;;
+    *) echo "Usage: $0 [thin|full|all]" >&2; exit 1 ;;
 esac
 
-echo ""
-echo "Done. Binaries in ${DIST_DIR}/"
-ls -lh "${DIST_DIR}"/ 2>/dev/null || echo "(empty)"
+case "$(uname -s)" in
+    Linux) os=linux ;;
+    Darwin) os=darwin ;;
+    *) echo "Use the GitHub Actions release workflow for Windows builds." >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    arm64|aarch64) arch=arm64 ;;
+    *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+version=${VERSION:-$(git describe --tags --always --dirty)}
+mkdir -p dist
+
+build_thin() {
+    if [ "$os" = linux ]; then
+        make VERSION="$version" static
+        cp glean-static "dist/glean-thin-${os}-${arch}"
+    else
+        make VERSION="$version" build-go
+        cp glean "dist/glean-thin-${os}-${arch}"
+    fi
+}
+
+build_full() {
+    if [ "$os" = linux ]; then
+        make VERSION="$version" static-full
+        cp glean-full-static "dist/glean-full-${os}-${arch}"
+    else
+        make VERSION="$version" build-full
+        cp glean-full "dist/glean-full-${os}-${arch}"
+    fi
+}
+
+case "$variant" in
+    thin) build_thin ;;
+    full) build_full ;;
+    all) build_thin; build_full ;;
+esac
+
+if command -v sha256sum >/dev/null 2>&1; then
+    (cd dist && sha256sum glean-* > checksums.txt)
+else
+    (cd dist && shasum -a 256 glean-* > checksums.txt)
+fi
+
+ls -lh dist/glean-* dist/checksums.txt
