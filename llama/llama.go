@@ -2,10 +2,10 @@ package llama
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../llama.cpp/include -I${SRCDIR}/../llama.cpp/ggml/include -I${SRCDIR}/../build/ggml/src -I${SRCDIR}/../build/ggml/include -I${SRCDIR}/../build/common -I${SRCDIR}/../cbridge
-#cgo LDFLAGS: ${SRCDIR}/../cbridge/schema_bridge.o ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a
-#cgo linux LDFLAGS: -lstdc++ -lm -lpthread -ldl
-#cgo darwin LDFLAGS: -lc++ -lm
-#cgo windows LDFLAGS: -lstdc++ -lm -lwinpthread
+#cgo LDFLAGS: ${SRCDIR}/../cbridge/schema_bridge.o
+#cgo linux LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -lstdc++ -lm -lpthread -ldl
+#cgo darwin LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -lc++ -lm
+#cgo windows LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/ggml.a ${SRCDIR}/../build/ggml/src/ggml-base.a ${SRCDIR}/../build/ggml/src/ggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -lstdc++ -lm -lwinpthread
 #include "wrapper.h"
 #include "schema_bridge.h"
 #include <stdlib.h>
