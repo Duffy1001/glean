@@ -16,6 +16,7 @@ type Case struct {
 
 type LoadedCase struct {
 	Case     Case
+	CaseDir  string
 	Input    []byte
 	Schema   json.RawMessage
 	Expected json.RawMessage

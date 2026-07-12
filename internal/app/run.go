@@ -140,23 +140,31 @@ func Run(ctx context.Context, opts Options, stdin io.Reader, stdout, stderr io.W
 		retErr = errors.Join(retErr, closeSources())
 	}()
 
-	result, err := engine.Extract(ctx, extract.Request{
-		Schema:    schema,
-		MaxTokens: opts.MaxTokens,
-		Delimiter: delimiter,
-	}, sources)
+	var result extract.Result
+	if opts.Atomic {
+		result, err = engine.Extract(ctx, extract.Request{
+			Schema:    schema,
+			MaxTokens: opts.MaxTokens,
+			Delimiter: delimiter,
+		}, sources)
+	} else {
+		sink := newJSONStreamArraySink(stdout, opts.Compact)
+		result, err = engine.ExtractStream(ctx, extract.Request{
+			Schema:    schema,
+			MaxTokens: opts.MaxTokens,
+			Delimiter: delimiter,
+		}, sources, sink)
+	}
 	if err != nil {
 		if errors.Is(err, extract.ErrNoInput) {
 			return errors.New("No input provided")
 		}
 		return err
 	}
-
-	// Extract returns a complete document, so it already satisfies --atomic.
-	// Streaming sinks restore incremental array output in the later sink refactor.
-	_ = opts.Atomic
-	if err := writeJSON(stdout, result.JSON, opts.Compact); err != nil {
-		return err
+	if len(result.JSON) > 0 {
+		if err := writeJSON(stdout, result.JSON, opts.Compact); err != nil {
+			return err
+		}
 	}
 	if result.Metrics.GeneratedTokens > 0 {
 		verbosef("Generated %d tokens in %v (%.1f tok/s)\n",

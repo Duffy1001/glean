@@ -89,7 +89,7 @@ func loadCase(dir string) (LoadedCase, error) {
 	if err := validateExpected(schema, expected); err != nil {
 		return LoadedCase{}, fmt.Errorf("validate expected output: %w", err)
 	}
-	return LoadedCase{Case: meta, Input: input, Schema: schema, Expected: expected}, nil
+	return LoadedCase{Case: meta, CaseDir: dir, Input: input, Schema: schema, Expected: expected}, nil
 }
 
 func readInput(dir string) ([]byte, error) {

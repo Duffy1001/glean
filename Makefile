@@ -1,4 +1,4 @@
-.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-thin-fast build-full-fast prepare-fast test static static-thin-fast static-full-fast release
+.PHONY: all clean clean-native setup configure-llama build-llama build-bridge build-go build-thin-fast build-full-fast prepare-fast test static static-thin-fast static-full-fast release eval-quality eval-warm eval-subprocess bench-micro
 
 LLAMA_DIR := llama.cpp
 BUILD_DIR := build
@@ -127,6 +127,18 @@ static-full-fast: build-llama build-bridge prepare-fast
 
 test: build-llama build-bridge
 	go test -v ./...
+
+eval-quality:
+	go run ./cmd/glean-eval --mode quality --corpus benchdata/corpus-v1
+
+eval-warm:
+	go run ./cmd/glean-eval --mode warm --corpus benchdata/corpus-v1 --warmups 2
+
+eval-subprocess:
+	go run ./cmd/glean-eval --mode subprocess --binary ./bin/glean --corpus benchdata/corpus-v1
+
+bench-micro:
+	go test -run '^$$' -bench . -benchmem -count 5 ./...
 
 clean-native:
 	rm -rf $(BIN_DIR) $(BRIDGE_OBJ) $(BACKEND_OBJ)

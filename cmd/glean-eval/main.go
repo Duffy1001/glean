@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/duffy1001/glean"
+	"github.com/duffy1001/glean/internal/benchmeta"
 	"github.com/duffy1001/glean/internal/eval"
 	"github.com/duffy1001/glean/internal/extract"
 )
@@ -23,24 +24,18 @@ func main() {
 	gpuLayers := flag.Int("gpu-layers", 0, "Model layers to offload")
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	repetitions := flag.Int("repetitions", 1, "Runs per corpus case")
+	warmups := flag.Int("warmups", 0, "Warmup runs per corpus case (warm mode only)")
 	output := flag.String("output", "", "Write JSON report to this file instead of stdout")
+	binary := flag.String("binary", "./bin/glean", "Subprocess mode: path to the compiled glean binary")
 	flag.Parse()
 
-	if *mode != "quality" {
-		fmt.Fprintln(os.Stderr, "only --mode quality is available")
+	if *mode != "quality" && *mode != "warm" && *mode != "subprocess" {
+		fmt.Fprintln(os.Stderr, "--mode must be one of: quality, warm, subprocess")
 		os.Exit(1)
 	}
 	if *device != "cpu" && *device != "auto" {
 		fmt.Fprintln(os.Stderr, "--device must be cpu or auto")
 		os.Exit(1)
-	}
-	if *modelPath == "" {
-		path, err := glean.ResolveModel("fast", false)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		*modelPath = path
 	}
 
 	corpus, err := eval.LoadCorpus(*corpusPath)
@@ -48,31 +43,69 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer extract.ShutdownBackend()
-	engine, err := extract.NewEngine(context.Background(), extract.Config{
-		ModelPath:        *modelPath,
-		ContextSize:      *contextSize,
-		Threads:          *threads,
-		GPULayers:        *gpuLayers,
-		Device:           *device,
-		AllowCPUFallback: *device == "auto",
-		GrammarEnabled:   !*noGrammar,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	defer engine.Close()
 
-	samples, err := eval.RunQuality(context.Background(), corpus, engine, *repetitions)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	modeValue := *mode
+	var samples []eval.Sample
+	switch modeValue {
+	case "quality", "warm":
+		if *modelPath == "" {
+			path, err := glean.ResolveModel("fast", false)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			*modelPath = path
+		}
+		defer extract.ShutdownBackend()
+		engine, err := extract.NewEngine(context.Background(), extract.Config{
+			ModelPath:        *modelPath,
+			ContextSize:      *contextSize,
+			Threads:          *threads,
+			GPULayers:        *gpuLayers,
+			Device:           *device,
+			AllowCPUFallback: *device == "auto",
+			GrammarEnabled:   !*noGrammar,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer engine.Close()
+
+		if modeValue == "quality" {
+			samples, err = eval.RunQuality(context.Background(), corpus, engine, *repetitions)
+		} else {
+			samples, err = eval.RunWarm(context.Background(), corpus, engine, *repetitions, *warmups)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "subprocess":
+		samples, err = eval.RunSubprocess(context.Background(), corpus, eval.SubprocessConfig{
+			Binary:      *binary,
+			Threads:     *threads,
+			ContextSize: *contextSize,
+			Device:      *device,
+			GPULayers:   *gpuLayers,
+			NoGrammar:   *noGrammar,
+			MaxTokens:   2048,
+			Compact:     true,
+		}, *repetitions)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintln(os.Stderr, "unreachable")
 		os.Exit(1)
 	}
+	generatedAt := time.Now().UTC()
 	report := eval.Report{
-		GeneratedAt: time.Now().UTC(),
-		Mode:        *mode,
+		GeneratedAt: generatedAt,
+		Mode:        modeValue,
 		Corpus:      corpus.Manifest,
+		Metadata:    benchmeta.Collect(generatedAt, corpus.Manifest.Model, *threads, *contextSize, *gpuLayers, !*noGrammar),
 		Samples:     samples,
 		Quality:     eval.Summarize(samples),
 	}
