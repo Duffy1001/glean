@@ -1,8 +1,6 @@
-package main
+package extract
 
 import (
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -10,7 +8,7 @@ import (
 func TestStreamReaderChunksPreservesRecords(t *testing.T) {
 	input := "one\ntwo\nthree\nfour\nfive\nsix\nseven\n"
 	var chunks []string
-	hadInput, err := streamReaderChunks(strings.NewReader(input), 12, "\n", func(chunk string) error {
+	hadInput, err := StreamReaderChunks(strings.NewReader(input), 12, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -38,7 +36,7 @@ func TestStreamReaderChunksPreservesRecords(t *testing.T) {
 }
 
 func TestStreamReaderChunksEmptyInput(t *testing.T) {
-	hadInput, err := streamReaderChunks(strings.NewReader(" \n\t"), 10, "\n", func(string) error {
+	hadInput, err := StreamReaderChunks(strings.NewReader(" \n\t"), 10, "\n", func(string) error {
 		t.Fatal("callback should not be called")
 		return nil
 	})
@@ -52,7 +50,7 @@ func TestStreamReaderChunksEmptyInput(t *testing.T) {
 
 func TestStreamReaderChunksRespectsByteLimit(t *testing.T) {
 	var chunks []string
-	_, err := streamReaderChunks(strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 8, "\n", func(chunk string) error {
+	_, err := StreamReaderChunks(strings.NewReader("one\ntwo\nthree\nfour\nfive\n"), 8, "\n", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -68,7 +66,7 @@ func TestStreamReaderChunksRespectsByteLimit(t *testing.T) {
 }
 
 func TestSplitChunk(t *testing.T) {
-	left, right, ok := splitChunk("one||two||three||four", "||")
+	left, right, ok := SplitChunk("one||two||three||four", "||")
 	if !ok {
 		t.Fatal("expected split")
 	}
@@ -78,7 +76,7 @@ func TestSplitChunk(t *testing.T) {
 }
 
 func TestSplitChunkFallsBackToRunes(t *testing.T) {
-	left, right, ok := splitChunk("abcdef", "||")
+	left, right, ok := SplitChunk("abcdef", "||")
 	if !ok {
 		t.Fatal("expected split")
 	}
@@ -88,10 +86,10 @@ func TestSplitChunkFallsBackToRunes(t *testing.T) {
 }
 
 func TestSchemaHasRootType(t *testing.T) {
-	if !schemaHasRootType(`{"type":"array"}`, "array") {
+	if !SchemaHasRootType(`{"type":"array"}`, "array") {
 		t.Fatal("array schema not detected")
 	}
-	if schemaHasRootType(`{"type":"object"}`, "array") {
+	if SchemaHasRootType(`{"type":"object"}`, "array") {
 		t.Fatal("object schema detected as array")
 	}
 }
@@ -111,75 +109,59 @@ func TestSchemaHasRootTypeVariants(t *testing.T) {
 		{`{"type":42}`, "array", false},
 	}
 	for _, tc := range tests {
-		got := schemaHasRootType(tc.schema, tc.wanted)
+		got := SchemaHasRootType(tc.schema, tc.wanted)
 		if got != tc.want {
-			t.Errorf("schemaHasRootType(%q, %q) = %v, want %v", tc.schema, tc.wanted, got, tc.want)
+			t.Errorf("SchemaHasRootType(%q, %q) = %v, want %v", tc.schema, tc.wanted, got, tc.want)
 		}
 	}
 }
 
 func TestDecodeDelimiter(t *testing.T) {
-	got, err := decodeDelimiter(`\n`)
+	got, err := DecodeDelimiter(`\n`)
 	if err != nil || got != "\n" {
 		t.Fatalf("newline delimiter: %q, %v", got, err)
 	}
-	got, err = decodeDelimiter(`\r`)
+	got, err = DecodeDelimiter(`\r`)
 	if err != nil || got != "\r" {
 		t.Fatalf("carriage-return delimiter: %q, %v", got, err)
 	}
-	got, err = decodeDelimiter(`\0`)
+	got, err = DecodeDelimiter(`\0`)
 	if err != nil || got != "\x00" {
 		t.Fatalf("NUL delimiter: %q, %v", got, err)
 	}
-	got, err = decodeDelimiter(`\\`)
+	got, err = DecodeDelimiter(`\\`)
 	if err != nil || got != "\\" {
 		t.Fatalf("backslash delimiter: %q, %v", got, err)
 	}
-	if _, err := decodeDelimiter(``); err == nil {
+	if _, err := DecodeDelimiter(``); err == nil {
 		t.Fatal("empty delimiter should fail")
 	}
 }
 
 func TestDecodeDelimiterMultiCharacter(t *testing.T) {
-	got, err := decodeDelimiter(`||`)
+	got, err := DecodeDelimiter(`||`)
 	if err != nil || got != "||" {
 		t.Fatalf("multi-char delimiter: %q, %v", got, err)
 	}
-	got, err = decodeDelimiter(`\n\t`)
+	got, err = DecodeDelimiter(`\n\t`)
 	if err != nil || got != "\n\t" {
 		t.Fatalf("combined escapes: %q, %v", got, err)
 	}
-	got, err = decodeDelimiter(`--`)
+	got, err = DecodeDelimiter(`--`)
 	if err != nil || got != "--" {
 		t.Fatalf("literal dashes: %q, %v", got, err)
 	}
 }
 
 func TestDecodeDelimiterTrailingEscape(t *testing.T) {
-	if _, err := decodeDelimiter(`\`); err == nil {
+	if _, err := DecodeDelimiter(`\`); err == nil {
 		t.Fatal("trailing escape should fail")
-	}
-}
-
-func TestEmitBufferedArrayEmpty(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
-
-	if err := emitBufferedArray(nil, true); err != nil {
-		t.Fatal(err)
-	}
-	w.Close()
-	out, _ := io.ReadAll(r)
-	if strings.TrimSpace(string(out)) != "[]" {
-		t.Fatalf("empty array output: %q", string(out))
 	}
 }
 
 func TestStreamReaderChunksUsesDelimiter(t *testing.T) {
 	var chunks []string
-	_, err := streamReaderChunks(strings.NewReader("one||two||three"), 7, "||", func(chunk string) error {
+	_, err := StreamReaderChunks(strings.NewReader("one||two||three"), 7, "||", func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
 	})
@@ -188,29 +170,5 @@ func TestStreamReaderChunksUsesDelimiter(t *testing.T) {
 	}
 	if len(chunks) != 2 || chunks[0] != "one||two" || chunks[1] != "three" {
 		t.Fatalf("unexpected delimiter chunks: %#v", chunks)
-	}
-}
-
-func TestEmitBufferedArray(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
-
-	if err := emitBufferedArray([]interface{}{"one", "two"}, true); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(out)) != `["one","two"]` {
-		t.Fatalf("unexpected atomic output: %q", string(out))
 	}
 }

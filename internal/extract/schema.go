@@ -1,4 +1,4 @@
-package main
+package extract
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/duffy1001/glean/llama"
 )
 
-var defaultSchema = `{
+var DefaultSchema = `{
   "type": "object",
   "properties": {
     "content_type": {"type": "string"},
@@ -27,7 +27,7 @@ var defaultSchema = `{
   "required": ["content_type", "summary", "attributes", "warnings"]
 }`
 
-func buildSchemaFromFields(fields string) (string, error) {
+func BuildSchemaFromFields(fields string) (string, error) {
 	parts := strings.Split(fields, ",")
 	props := make(map[string]interface{}, len(parts))
 	seen := make(map[string]struct{}, len(parts))
@@ -64,7 +64,25 @@ func buildSchemaFromFields(fields string) (string, error) {
 	return string(b), nil
 }
 
-func jsonSchemaToGBNF(schemaStr string) (string, error) {
+func SchemaHasRootType(schema, wanted string) bool {
+	var doc map[string]interface{}
+	if err := json.Unmarshal([]byte(schema), &doc); err != nil {
+		return false
+	}
+	switch schemaType := doc["type"].(type) {
+	case string:
+		return schemaType == wanted
+	case []interface{}:
+		for _, value := range schemaType {
+			if value == wanted {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func JSONSchemaToGBNF(schemaStr string) (string, error) {
 	gbnf, err := llama.SchemaToGrammar(schemaStr)
 	if err != nil {
 		return "", fmt.Errorf("schema conversion failed: %w", err)

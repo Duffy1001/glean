@@ -1,11 +1,11 @@
-package main
+package extract
 
 import (
 	"testing"
 )
 
 func TestBuildSchemaFromFields(t *testing.T) {
-	schema, err := buildSchemaFromFields("name,age,email")
+	schema, err := BuildSchemaFromFields("name,age,email")
 	if err != nil {
 		t.Fatalf("schema build failed: %v", err)
 	}
@@ -37,19 +37,19 @@ func TestBuildSchemaFromFields(t *testing.T) {
 }
 
 func TestBuildSchemaFromFieldsEmpty(t *testing.T) {
-	if _, err := buildSchemaFromFields(""); err == nil {
+	if _, err := BuildSchemaFromFields(""); err == nil {
 		t.Fatal("empty fields should fail")
 	}
 }
 
 func TestBuildSchemaFromFieldsWhitespace(t *testing.T) {
-	if _, err := buildSchemaFromFields("  foo ,  bar  ,, "); err == nil {
+	if _, err := BuildSchemaFromFields("  foo ,  bar  ,, "); err == nil {
 		t.Fatal("empty field names should fail")
 	}
 }
 
 func TestBuildSchemaFromFieldsDuplicate(t *testing.T) {
-	if _, err := buildSchemaFromFields("foo,bar,foo"); err == nil {
+	if _, err := BuildSchemaFromFields("foo,bar,foo"); err == nil {
 		t.Fatal("duplicate field names should fail")
 	}
 }

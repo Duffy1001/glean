@@ -1,18 +1,16 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/duffy1001/glean/internal/extract"
 	"github.com/duffy1001/glean/llama"
 )
 
@@ -20,8 +18,6 @@ const (
 	promptOverheadTokens = 600
 	charsPerInputToken   = 3.0
 )
-
-var errPromptTooLong = errors.New("prompt exceeds context budget")
 
 func main() {
 	schemaFile := flag.String("schema", "", "JSON Schema file for constrained output")
@@ -126,7 +122,22 @@ func main() {
 
 	args := flag.Args()
 
-	schema := defaultSchema
+	var sources []extract.Source
+	if len(args) == 0 {
+		sources = []extract.Source{{Name: "stdin", Reader: os.Stdin}}
+	} else {
+		for _, p := range args {
+			f, err := os.Open(p)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			defer f.Close()
+			sources = append(sources, extract.Source{Name: p, Reader: f})
+		}
+	}
+
+	schema := extract.DefaultSchema
 	if *schemaFile != "" {
 		data, err := os.ReadFile(*schemaFile)
 		if err != nil {
@@ -135,14 +146,14 @@ func main() {
 		}
 		schema = string(data)
 	} else if fieldsProvided {
-		schema, err = buildSchemaFromFields(*fields)
+		schema, err = extract.BuildSchemaFromFields(*fields)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Field schema error: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	validator, err := NewSchemaValidator(schema)
+	validator, err := extract.NewSchemaValidator(schema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Schema error: %v\n", err)
 		os.Exit(1)
@@ -166,7 +177,7 @@ func main() {
 
 	var grammar string
 	if !*noGrammar {
-		grammar, err = jsonSchemaToGBNF(schema)
+		grammar, err = extract.JSONSchemaToGBNF(schema)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Schema conversion error: %v\n", err)
 			os.Exit(1)
@@ -179,7 +190,7 @@ func main() {
 
 	eos := m.TokenEOS()
 
-	delim, err := decodeDelimiter(*delimiter)
+	delim, err := extract.DecodeDelimiter(*delimiter)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Delimiter error: %v\n", err)
 		os.Exit(1)
@@ -253,11 +264,11 @@ func main() {
 		}
 		chunkNumber++
 		verbosef("Processing chunk %d (%d bytes)...\n", chunkNumber, len(chunk))
-		raw, generated, hitLimit, err := generateOne(m, schema, chunk, *maxTokens, *nCtx, eos, *verbose)
+		raw, generated, hitLimit, err := extract.GenerateOne(m, schema, chunk, *maxTokens, *nCtx, eos, *verbose)
 		totalGenerated += generated
 		if err != nil {
-			if errors.Is(err, errPromptTooLong) {
-				left, right, ok := splitChunk(chunk, delim)
+			if errors.Is(err, extract.ErrPromptTooLong) {
+				left, right, ok := extract.SplitChunk(chunk, delim)
 				if ok {
 					if err := processArrayChunk(left); err != nil {
 						return err
@@ -271,7 +282,7 @@ func main() {
 		var parsed []interface{}
 		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 			if hitLimit {
-				left, right, ok := splitChunk(chunk, delim)
+				left, right, ok := extract.SplitChunk(chunk, delim)
 				if ok {
 					if err := processArrayChunk(left); err != nil {
 						return err
@@ -292,9 +303,9 @@ func main() {
 		return nil
 	}
 
-	arraySchema := schemaHasRootType(schema, "array")
+	arraySchema := extract.SchemaHasRootType(schema, "array")
 	if arraySchema {
-		hadInput, err := streamSources(args, inputCharsBudget, delim, processArrayChunk)
+		hadInput, err := extract.StreamSources(sources, inputCharsBudget, delim, processArrayChunk)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -315,7 +326,7 @@ func main() {
 		}
 		fmt.Println()
 	} else {
-		input, err := readSources(args)
+		input, err := extract.ReadSources(sources)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -329,7 +340,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		raw, generated, _, err := generateOne(m, schema, input, *maxTokens, *nCtx, eos, *verbose)
+		raw, generated, _, err := extract.GenerateOne(m, schema, input, *maxTokens, *nCtx, eos, *verbose)
 		totalGenerated += generated
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -364,64 +375,6 @@ func main() {
 
 }
 
-func generateOne(m *llama.Model, schema, chunkInput string, maxTokens, nCtx int, eos int32, verbose bool) (string, int, bool, error) {
-	systemMsg := "You are a JSON extraction engine. Output ONLY valid JSON. No explanation, no markdown. /no_think"
-
-	userMsg := "Extract structured data from the following input as JSON matching this schema.\n\n" +
-		"When the schema defines an array, extract ALL matching items from the input, not just the first. " +
-		"For line-oriented lists or tables, process every non-empty source row from first to last and emit a separate item for each row. " +
-		"Do not summarize, group, combine, deduplicate, or omit repeated-looking rows. Preserve literal identifiers and numeric suffixes exactly as written.\n\n" +
-		"Schema:\n" + schema + "\n\nInput:\n" + chunkInput
-
-	prompt, err := m.ChatApplyTemplate(systemMsg, userMsg, true)
-	if err != nil {
-		return "", 0, false, fmt.Errorf("chat template: %w", err)
-	}
-
-	tokens, err := m.Tokenize(prompt, false, true)
-	if err != nil {
-		return "", 0, false, fmt.Errorf("tokenize: %w", err)
-	}
-	if verbose {
-		fmt.Fprintf(os.Stderr, "Prompt: %d tokens\n", len(tokens))
-	}
-	if len(tokens)+maxTokens > nCtx {
-		return "", 0, false, fmt.Errorf("%w: prompt %d + generation %d > context %d", errPromptTooLong, len(tokens), maxTokens, nCtx)
-	}
-
-	if err := m.Decode(tokens); err != nil {
-		return "", 0, false, fmt.Errorf("decode prompt: %w", err)
-	}
-
-	var result strings.Builder
-	generated := 0
-
-	for i := 0; i < maxTokens; i++ {
-		tok := m.SampleNext()
-
-		if tok == eos {
-			break
-		}
-
-		piece := m.TokenToPiece(tok)
-		result.WriteString(piece)
-		m.AcceptToken(tok)
-		generated++
-
-		tokBatch := []int32{tok}
-		if err := m.Decode(tokBatch); err != nil {
-			return "", generated, false, fmt.Errorf("decode step %d: %w", i, err)
-		}
-	}
-
-	raw := strings.TrimSpace(result.String())
-	if raw == "" {
-		return "", generated, generated == maxTokens, fmt.Errorf("empty output")
-	}
-
-	return raw, generated, generated == maxTokens, nil
-}
-
 func emitBufferedArray(items []interface{}, compact bool) error {
 	if len(items) == 0 {
 		fmt.Println("[]")
@@ -447,170 +400,4 @@ func emitBufferedArray(items []interface{}, compact bool) error {
 	}
 	fmt.Println("]")
 	return nil
-}
-
-func streamSources(paths []string, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
-	if len(paths) == 0 {
-		return streamReaderChunks(os.Stdin, byteBudget, delimiter, yield)
-	}
-
-	hadInput := false
-	for _, path := range paths {
-		f, err := os.Open(path)
-		if err != nil {
-			return hadInput, fmt.Errorf("read %s: %w", path, err)
-		}
-		hadFileInput, readErr := streamReaderChunks(f, byteBudget, delimiter, yield)
-		closeErr := f.Close()
-		hadInput = hadInput || hadFileInput
-		if readErr != nil {
-			return hadInput, fmt.Errorf("read %s: %w", path, readErr)
-		}
-		if closeErr != nil {
-			return hadInput, fmt.Errorf("close %s: %w", path, closeErr)
-		}
-	}
-	return hadInput, nil
-}
-
-func streamReaderChunks(r io.Reader, byteBudget int, delimiter string, yield func(string) error) (bool, error) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
-	scanner.Split(splitDelimiter([]byte(delimiter)))
-	var records []string
-	currentBytes := 0
-	hadInput := false
-
-	emit := func() error {
-		if len(records) == 0 {
-			return nil
-		}
-		chunk := strings.Join(records, delimiter)
-		if strings.TrimSpace(chunk) != "" {
-			hadInput = true
-			if err := yield(chunk); err != nil {
-				return err
-			}
-		}
-		records = nil
-		currentBytes = 0
-		return nil
-	}
-
-	for scanner.Scan() {
-		record := scanner.Text()
-		if record != "" {
-			if len(records) > 0 && currentBytes+len(record) > byteBudget {
-				if emitErr := emit(); emitErr != nil {
-					return hadInput, emitErr
-				}
-			}
-			records = append(records, record)
-			currentBytes += len(record)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return hadInput, err
-	}
-	if err := emit(); err != nil {
-		return hadInput, err
-	}
-	return hadInput, nil
-}
-
-func splitDelimiter(delimiter []byte) bufio.SplitFunc {
-	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if index := bytes.Index(data, delimiter); index >= 0 {
-			return index + len(delimiter), data[:index], nil
-		}
-		if atEOF && len(data) > 0 {
-			return len(data), data, nil
-		}
-		return 0, nil, nil
-	}
-}
-
-func decodeDelimiter(value string) (string, error) {
-	var out strings.Builder
-	for i := 0; i < len(value); i++ {
-		if value[i] != '\\' {
-			out.WriteByte(value[i])
-			continue
-		}
-		if i+1 >= len(value) {
-			return "", errors.New("trailing escape")
-		}
-		i++
-		switch value[i] {
-		case 'n':
-			out.WriteByte('\n')
-		case 't':
-			out.WriteByte('\t')
-		case '0':
-			out.WriteByte(0)
-		case 'r':
-			out.WriteByte('\r')
-		case '\\':
-			out.WriteByte('\\')
-		default:
-			return "", fmt.Errorf("unsupported escape \\%c", value[i])
-		}
-	}
-	if out.Len() == 0 {
-		return "", errors.New("delimiter cannot be empty")
-	}
-	return out.String(), nil
-}
-
-func readSources(paths []string) (string, error) {
-	if len(paths) == 0 {
-		data, err := io.ReadAll(os.Stdin)
-		return string(data), err
-	}
-
-	var input strings.Builder
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("read %s: %w", path, err)
-		}
-		input.Write(data)
-		input.WriteByte('\n')
-	}
-	return input.String(), nil
-}
-
-func splitChunk(chunk, delimiter string) (string, string, bool) {
-	parts := strings.Split(chunk, delimiter)
-	if len(parts) > 1 {
-		mid := len(parts) / 2
-		if mid > 0 && mid < len(parts) {
-			return strings.Join(parts[:mid], delimiter), strings.Join(parts[mid:], delimiter), true
-		}
-	}
-
-	runes := []rune(chunk)
-	if len(runes) < 2 {
-		return "", "", false
-	}
-	mid := len(runes) / 2
-	return string(runes[:mid]), string(runes[mid:]), true
-}
-
-func schemaHasRootType(schema, wanted string) bool {
-	var doc map[string]interface{}
-	if err := json.Unmarshal([]byte(schema), &doc); err != nil {
-		return false
-	}
-	switch schemaType := doc["type"].(type) {
-	case string:
-		return schemaType == wanted
-	case []interface{}:
-		for _, value := range schemaType {
-			if value == wanted {
-				return true
-			}
-		}
-	}
-	return false
 }
