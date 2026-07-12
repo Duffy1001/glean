@@ -72,7 +72,7 @@ configure-llama: setup
 		$(CMAKE_EXTRA_ARGS)
 
 build-llama: configure-llama
-	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama common ggml
+	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama llama-common ggml
 
 build-bridge: setup
 	$(CXX) -c -O2 -std=c++17 \
