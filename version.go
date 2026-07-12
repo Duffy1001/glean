@@ -1,3 +1,3 @@
-package main
+package glean
 
-var version = "dev"
+var Version = "dev"

@@ -1,4 +1,4 @@
-package main
+package glean
 
 import (
 	"crypto/sha256"
@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type ModelInfo struct {
+type modelInfo struct {
 	Name     string
 	Filename string
 	URL      string
@@ -22,7 +22,7 @@ type ModelInfo struct {
 
 const modelDownloadTimeout = 30 * time.Minute
 
-var modelRegistry = map[string]ModelInfo{
+var modelRegistry = map[string]modelInfo{
 	"fast": {
 		Name:     "qwen3-0.6b",
 		Filename: "qwen3-0.6b-q4_k_m.gguf",
@@ -50,7 +50,7 @@ func modelCacheDir() (string, error) {
 	return filepath.Join(home, ".cache", "glean", "models"), nil
 }
 
-func resolveModel(choice string, verbose bool) (string, error) {
+func ResolveModel(choice string, verbose bool) (string, error) {
 	info, ok := modelRegistry[choice]
 	if !ok {
 		return "", fmt.Errorf("unknown model %q (available: fast)", choice)
@@ -79,7 +79,7 @@ func resolveModel(choice string, verbose bool) (string, error) {
 	return materializeModel(info, path, verbose)
 }
 
-func downloadModel(info ModelInfo, dest string, verbose bool) (string, error) {
+func downloadModel(info modelInfo, dest string, verbose bool) (string, error) {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "Downloading %s (%s)...\n", info.Name, humanSize(info.Size))
 	}
@@ -106,7 +106,7 @@ func downloadModel(info ModelInfo, dest string, verbose bool) (string, error) {
 	return dest, nil
 }
 
-func verifyModel(path string, info ModelInfo) (bool, error) {
+func verifyModel(path string, info modelInfo) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return false, err
@@ -128,7 +128,7 @@ func verifyModel(path string, info ModelInfo) (bool, error) {
 	return hex.EncodeToString(h.Sum(nil)) == info.SHA256, nil
 }
 
-func installModel(dest string, info ModelInfo, src io.Reader) (int64, error) {
+func installModel(dest string, info modelInfo, src io.Reader) (int64, error) {
 	tmp, err := os.CreateTemp(filepath.Dir(dest), info.Filename+".tmp-*")
 	if err != nil {
 		return 0, err

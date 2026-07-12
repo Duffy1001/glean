@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/duffy1001/glean"
 	"github.com/duffy1001/glean/internal/extract"
 	"github.com/duffy1001/glean/llama"
 )
@@ -17,7 +18,7 @@ import (
 func main() {
 	schemaFile := flag.String("schema", "", "JSON Schema file for constrained output")
 	fields := flag.String("fields", "", "Comma-separated field names for simple schema; names must be unique and non-empty")
-	modelChoice := flag.String("model", defaultModel(), "Model: fast (0.6B)")
+	modelChoice := flag.String("model", glean.DefaultModel(), "Model: fast (0.6B)")
 	maxTokens := flag.Int("max-tokens", 2048, "Maximum tokens to generate")
 	compact := flag.Bool("compact", false, "Output compact JSON")
 	atomic := flag.Bool("atomic", false, "Buffer array output and emit only after all chunks succeed")
@@ -33,7 +34,7 @@ func main() {
 	flag.Parse()
 	var err error
 	if *showVersion {
-		fmt.Printf("glean %s (%s)\n", version, buildVariant())
+		fmt.Printf("glean %s (%s)\n", glean.Version, glean.BuildVariant())
 		return
 	}
 
@@ -87,7 +88,7 @@ func main() {
 			DefaultDevice       string                `json:"default_device"`
 			Backends            []string              `json:"backends"`
 			Devices             []llama.BackendDevice `json:"devices"`
-		}{version, buildVariant(), runtime.GOOS, runtime.GOARCH, expectedAccelerator, hasGPU, defaultDevice, llama.Backends(), devices}
+		}{glean.Version, glean.BuildVariant(), runtime.GOOS, runtime.GOARCH, expectedAccelerator, hasGPU, defaultDevice, llama.Backends(), devices}
 		out, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Report error: %v\n", err)
@@ -136,7 +137,7 @@ func main() {
 		}
 	}
 
-	modelPath, err := resolveModel(*modelChoice, *verbose)
+	modelPath, err := glean.ResolveModel(*modelChoice, *verbose)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

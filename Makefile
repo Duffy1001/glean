@@ -6,7 +6,7 @@ BIN_DIR := bin
 CBRIDGE_DIR := cbridge
 VERSION ?= dev
 CMAKE_EXTRA_ARGS ?=
-GO_LDFLAGS := -s -w -X main.version=$(VERSION)
+GO_LDFLAGS := -s -w -X github.com/duffy1001/glean.Version=$(VERSION)
 CGO_CFLAGS := -I$(CURDIR)/$(LLAMA_DIR)/include -I$(CURDIR)/$(LLAMA_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/ggml/src -I$(CURDIR)/$(BUILD_DIR)/ggml/include -I$(CURDIR)/$(BUILD_DIR)/common -I$(CURDIR)/$(CBRIDGE_DIR)
 VENDOR_INC := -I$(CURDIR)/$(LLAMA_DIR)/vendor
 VULKAN_INCLUDE_DIR = $(shell awk -F= '/^Vulkan_INCLUDE_DIR:PATH=/{print $$2}' $(BUILD_DIR)/CMakeCache.txt 2>/dev/null)
@@ -100,30 +100,30 @@ build-bridge: setup
 
 build-go: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean ./cmd/glean
 
 build-thin-fast: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-thin-fast .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-thin-fast ./cmd/glean
 
 prepare-fast:
 	./scripts/prepare-embedded-model.sh fast
 
 build-full-fast: build-llama build-bridge prepare-fast
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -tags embedded -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-full-fast .
+	CGO_ENABLED=1 go build -tags embedded -ldflags '$(GO_LDFLAGS)' -o $(BIN_DIR)/glean-full-fast ./cmd/glean
 
 static: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-static ./cmd/glean
 
 static-thin-fast: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-thin-fast-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-thin-fast-static ./cmd/glean
 
 static-full-fast: build-llama build-bridge prepare-fast
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo embedded' -o $(BIN_DIR)/glean-full-fast-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo embedded' -o $(BIN_DIR)/glean-full-fast-static ./cmd/glean
 
 test: build-llama build-bridge
 	go test -v ./...

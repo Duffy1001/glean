@@ -1,11 +1,11 @@
 //go:build !embedded
 
-package main
+package glean
 
-func defaultModel() string {
+func DefaultModel() string {
 	return "fast"
 }
 
-func buildVariant() string {
+func BuildVariant() string {
 	return "thin-fast"
 }

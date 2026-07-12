@@ -1,7 +1,7 @@
 //go:build !embedded
 
-package main
+package glean
 
-func materializeModel(info ModelInfo, dest string, verbose bool) (string, error) {
+func materializeModel(info modelInfo, dest string, verbose bool) (string, error) {
 	return downloadModel(info, dest, verbose)
 }

@@ -1,4 +1,4 @@
-package main
+package glean
 
 import (
 	"crypto/sha256"
@@ -12,7 +12,7 @@ import (
 func TestInstallAndVerifyModel(t *testing.T) {
 	content := "model data"
 	sum := sha256.Sum256([]byte(content))
-	info := ModelInfo{
+	info := modelInfo{
 		Filename: "model.gguf",
 		SHA256:   hex.EncodeToString(sum[:]),
 		Size:     int64(len(content)),
@@ -43,7 +43,7 @@ func TestInstallAndVerifyModel(t *testing.T) {
 }
 
 func TestInstallModelRejectsChecksumMismatch(t *testing.T) {
-	info := ModelInfo{Filename: "model.gguf", SHA256: strings.Repeat("0", 64), Size: 4}
+	info := modelInfo{Filename: "model.gguf", SHA256: strings.Repeat("0", 64), Size: 4}
 	dest := filepath.Join(t.TempDir(), info.Filename)
 	if _, err := installModel(dest, info, strings.NewReader("data")); err == nil {
 		t.Fatal("expected checksum error")

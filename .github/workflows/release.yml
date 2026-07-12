@@ -73,11 +73,11 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ matrix.os }}" = linux ]; then
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "osusergo netgo" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "osusergo netgo embedded" -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/duffy1001/glean.Version=${VERSION}" -tags "osusergo netgo" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" ./cmd/glean
+            CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/duffy1001/glean.Version=${VERSION}" -tags "osusergo netgo embedded" -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" ./cmd/glean
           else
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags embedded -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/duffy1001/glean.Version=${VERSION}" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" ./cmd/glean
+            CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/duffy1001/glean.Version=${VERSION}" -tags embedded -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" ./cmd/glean
           fi
       - name: Verify artifacts
         run: |
@@ -150,8 +150,8 @@ jobs:
           export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
           go version
           mkdir -p dist
-          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -o dist/glean-thin-fast-windows-amd64.exe .
-          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags embedded -o dist/glean-full-fast-windows-amd64.exe .
+          CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/duffy1001/glean.Version=${VERSION} -extldflags=-static" -o dist/glean-thin-fast-windows-amd64.exe ./cmd/glean
+          CGO_ENABLED=1 go build -ldflags "-s -w -X github.com/duffy1001/glean.Version=${VERSION} -extldflags=-static" -tags embedded -o dist/glean-full-fast-windows-amd64.exe ./cmd/glean
       - name: Verify artifacts
         shell: msys2 {0}
         run: |
