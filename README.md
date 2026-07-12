@@ -51,20 +51,20 @@ printf '%s\n' \
 ]
 ```
 
-Normalize a log stream:
+Parse a log stream with one record per line:
 
 ```sh
 journalctl -o short-iso --no-pager |
-  glean --fields timestamp,service,message --delimiter '\\n' --compact
+  glean --fields timestamp,service,message --delimiter '\n' --compact
 ```
 
-Extract from files:
+Read directly from files:
 
 ```sh
 glean --fields host,status logs/*.txt
 ```
 
-Use the built-in summary schema:
+Extract a summary object with the built-in schema:
 
 ```sh
 glean incident-notes.txt
@@ -106,7 +106,7 @@ llama.cpp can memory-map it. Neither edition embeds a network dependency.
 
 ## Schemas
 
-`--fields` creates a root array whose required fields are strings:
+`--fields` creates a root array of objects with string fields:
 
 ```sh
 printf '%s\n' \
@@ -115,7 +115,7 @@ printf '%s\n' \
   glean --fields host,status
 ```
 
-For types, nested objects, enums, or stricter contracts, provide a JSON Schema:
+For integers, booleans, enums, nested objects, or stricter contracts, provide a JSON Schema:
 
 ```json
 {
@@ -152,20 +152,24 @@ when correctness is important.
 
 ## Large Input
 
-Root-array schemas are processed incrementally. Records are split using an
-explicit delimiter, packed into context-sized chunks, extracted, validated,
-and written as soon as each chunk completes.
+Root-array schemas are processed incrementally. Records are split on
+`--delimiter`, packed into context-sized chunks, extracted, validated, and
+written as soon as each chunk completes.
+
+Use `--delimiter '\n'` for line-oriented input, `--delimiter '\0'` for
+NUL-delimited input, or any other string, including multi-character separators
+like `||`.
 
 ```sh
 cat application.log |
-  glean --fields timestamp,level,message --delimiter '\\n'
+  glean --fields timestamp,level,message --delimiter '\n'
 ```
 
-Use NUL-delimited records when the source can contain newlines:
+Use NUL-delimited input when records can contain newlines:
 
 ```sh
-command-with-one-record-per-line |
-  glean --delimiter '\\0' --fields id,value
+git ls-files -z |
+  glean --delimiter '\0' --fields path --compact
 ```
 
 Oversized records are split and retried. Output is one JSON array, but its items
@@ -225,6 +229,9 @@ glean-thin-fast-<os>-<arch>
 glean-full-fast-<os>-<arch>
 ```
 
+The release workflow uploads these binaries and `checksums.txt` to GitHub
+Releases, so users can download them from the release page.
+
 The installer renames the selected asset to `glean`. Published SHA-256 values
 are in `checksums.txt`. Current release targets are Linux amd64/arm64, macOS
 arm64, and Windows amd64.
@@ -244,7 +251,7 @@ Models are cached under:
 | `--model NAME` | `fast` | Supported model: `fast` |
 | `--max-tokens N` | `2048` | Maximum generated tokens per inference chunk |
 | `--ctx N` | `8192` | Model context window |
-| `--delimiter STRING` | `\\n` | Record separator for array extraction |
+| `--delimiter STRING` | `\n` | Record separator for array extraction; supports `\n`, `\t`, `\r`, `\0`, `\\`, and multi-character strings |
 | `--threads N` | `4` | CPU inference threads |
 | `--device NAME` | `auto` | Device policy: `auto`, `cpu`, or `gpu` |
 | `--gpu-layers N` | `-1` | Layers to offload when GPU inference is selected |

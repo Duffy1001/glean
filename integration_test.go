@@ -4,7 +4,9 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,13 +22,16 @@ func TestEndToEndExtraction(t *testing.T) {
 		t.Fatalf("glean failed: %v\nstderr: (check above)", err)
 	}
 
-	var result map[string]interface{}
+	var result []map[string]interface{}
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, string(out))
 	}
+	if len(result) == 0 {
+		t.Fatalf("expected at least one extracted item: %s", string(out))
+	}
 
 	for _, key := range []string{"name", "age", "employer", "contact"} {
-		if _, ok := result[key]; !ok {
+		if _, ok := result[0][key]; !ok {
 			t.Errorf("missing key %q in output: %s", key, string(out))
 		}
 	}
@@ -65,10 +70,13 @@ func TestEndToEndCustomSchemaWithEnum(t *testing.T) {
 		"required": ["title", "category"]
 	}`
 
-	cmd := exec.Command("./bin/glean", "--model", "fast", "--max-tokens", "200", "--schema", "/dev/stdin")
-	schemaReader := strings.NewReader(schema)
-	combined := schemaReader.String() + "\n---\nThis is a blog post about Go programming."
-	cmd.Stdin = strings.NewReader(combined)
+	schemaPath := filepath.Join(t.TempDir(), "schema.json")
+	if err := os.WriteFile(schemaPath, []byte(schema), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	cmd := exec.Command("./bin/glean", "--model", "fast", "--max-tokens", "200", "--schema", schemaPath)
+	cmd.Stdin = strings.NewReader("This is a blog post about Go programming.")
 
 	out, err := cmd.Output()
 	if err != nil {

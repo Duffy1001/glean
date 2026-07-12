@@ -89,9 +89,17 @@ func TestDecodeDelimiter(t *testing.T) {
 	if err != nil || got != "\n" {
 		t.Fatalf("newline delimiter: %q, %v", got, err)
 	}
+	got, err = decodeDelimiter(`\r`)
+	if err != nil || got != "\r" {
+		t.Fatalf("carriage-return delimiter: %q, %v", got, err)
+	}
 	got, err = decodeDelimiter(`\0`)
 	if err != nil || got != "\x00" {
 		t.Fatalf("NUL delimiter: %q, %v", got, err)
+	}
+	got, err = decodeDelimiter(`\\`)
+	if err != nil || got != "\\" {
+		t.Fatalf("backslash delimiter: %q, %v", got, err)
 	}
 	if _, err := decodeDelimiter(``); err == nil {
 		t.Fatal("empty delimiter should fail")

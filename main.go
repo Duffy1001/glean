@@ -31,7 +31,7 @@ func main() {
 	compact := flag.Bool("compact", false, "Output compact JSON")
 	nThreads := flag.Int("threads", 4, "CPU threads")
 	nCtx := flag.Int("ctx", 8192, "Context window size")
-	delimiter := flag.String("delimiter", "\\n", "Record delimiter for array extraction (supports \\n, \\t, and \\0)")
+	delimiter := flag.String("delimiter", "\\n", "Record delimiter for array extraction (supports \\n, \\t, \\r, \\0, \\\\, and multi-character strings)")
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	verbose := flag.Bool("verbose", false, "Show llama.cpp debug output")
 	device := flag.String("device", "auto", "Inference device: auto, cpu, or gpu")

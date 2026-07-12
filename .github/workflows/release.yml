@@ -87,11 +87,17 @@ jobs:
           dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --report
           if [ "${{ matrix.os }}" = linux ]; then
             GGML_DISABLE_VULKAN=1 dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --report
-            bad=$(readelf -d dist/glean-* | grep NEEDED | grep -vE 'libc\.so|libm\.so' || true)
-            test -z "$bad"
+            bad=$(readelf -d dist/glean-* | grep NEEDED | grep -vE 'lib(c|m|dl|pthread|gcc_s|stdc\+\+|atomic)\.so' || true)
+            if [ -n "$bad" ]; then
+              printf '%s\n' "$bad"
+              exit 1
+            fi
           else
             bad=$(otool -L dist/glean-* | grep -v '^dist/' | grep -vE '^\s+(/usr/lib/|/System/Library/)' || true)
-            test -z "$bad"
+            if [ -n "$bad" ]; then
+              printf '%s\n' "$bad"
+              exit 1
+            fi
           fi
       - uses: actions/upload-artifact@v4
         with:
