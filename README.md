@@ -33,6 +33,7 @@ printf '%s\n' \
 - Overlap-aware merging and primary-key deduplication
 - Two supported model choices for speed or quality
 - Pure JSON on stdout; optional diagnostics on stderr
+- Automatic backend discovery with safe CPU fallback
 
 ## Install
 
@@ -237,10 +238,13 @@ are produced natively for their target architecture.
 | `--ctx N` | `8192` | Model context window |
 | `--chunk-lines N` | `4` | Maximum source lines per root-array inference chunk; use `1` for one source line per inference or `0` to disable the line cap |
 | `--threads N` | `4` | CPU inference threads |
+| `--device NAME` | `auto` | Device policy: `auto`, `cpu`, or `gpu` |
+| `--gpu-layers N` | `-1` | Layers to offload when GPU inference is selected |
 | `--compact` | `false` | Print compact rather than indented JSON |
 | `--no-grammar` | `false` | Disable grammar constraints; validation remains enabled |
 | `--verbose` | `false` | Write progress and native diagnostics to stderr |
 | `--version` | `false` | Print the version and build variant |
+| `--report` | `false` | Print detected backends, devices, memory, and default selection as JSON |
 
 `--schema` takes precedence when both `--schema` and `--fields` are supplied.
 Positional arguments are input file paths. With no positional arguments,
@@ -255,6 +259,7 @@ Requirements:
 - CMake
 - A C compiler and a C++17 compiler
 - CGO enabled
+- Vulkan headers, `glslc`, and SPIR-V headers on Linux/Windows build hosts
 
 Clone and build:
 
@@ -274,7 +279,7 @@ Run unit tests:
 make test
 ```
 
-Build a stripped static Linux executable:
+Build a stripped Linux executable with statically linked C++ runtimes:
 
 ```sh
 make static
@@ -298,3 +303,19 @@ Build all four release editions for the current Linux or macOS platform:
 
 The native build intentionally disables network support, examples, tests,
 server components, shared libraries, and OpenMP in llama.cpp.
+
+## Device Selection
+
+Release binaries contain CPU support plus the platform accelerator backend:
+
+- Linux and Windows include Vulkan.
+- macOS includes Metal with embedded shader source.
+
+GPU drivers and the Vulkan loader are optional system capabilities, not hard
+runtime dependencies. If they are missing or unusable, `glean` continues with
+CPU. Use `glean --report` to inspect what the process sees.
+
+For these small models, Vulkan startup and dispatch overhead can exceed its
+benefit. Linux and Windows therefore default to CPU while exposing Vulkan with
+`--device gpu`. macOS defaults to Metal when available. `--device cpu` always
+disables offload. Automatic GPU initialization failures retry on CPU.

@@ -3,9 +3,9 @@ package llama
 /*
 #cgo CFLAGS: -I${SRCDIR}/../llama.cpp/include -I${SRCDIR}/../llama.cpp/ggml/include -I${SRCDIR}/../build/ggml/src -I${SRCDIR}/../build/ggml/include -I${SRCDIR}/../build/common -I${SRCDIR}/../cbridge
 #cgo LDFLAGS: ${SRCDIR}/../cbridge/schema_bridge.o
-#cgo linux LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -lstdc++ -lm -lpthread -ldl
-#cgo darwin LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -lc++ -lm
-#cgo windows LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/ggml.a ${SRCDIR}/../build/ggml/src/ggml-base.a ${SRCDIR}/../build/ggml/src/ggml-cpu.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -lstdc++ -lm -lwinpthread
+#cgo linux LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/ggml/src/ggml-vulkan/libggml-vulkan.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a ${SRCDIR}/../cbridge/vulkan_loader.o -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic -lm -lpthread -ldl
+#cgo darwin LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/libggml.a ${SRCDIR}/../build/ggml/src/libggml-base.a ${SRCDIR}/../build/ggml/src/libggml-cpu.a ${SRCDIR}/../build/ggml/src/ggml-metal/libggml-metal.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a -framework Foundation -framework Metal -framework MetalKit -lc++ -lm
+#cgo windows LDFLAGS: ${SRCDIR}/../build/src/libllama.a ${SRCDIR}/../build/ggml/src/ggml.a ${SRCDIR}/../build/ggml/src/ggml-base.a ${SRCDIR}/../build/ggml/src/ggml-cpu.a ${SRCDIR}/../build/ggml/src/ggml-vulkan/ggml-vulkan.a ${SRCDIR}/../build/common/libllama-common.a ${SRCDIR}/../build/common/libllama-common-base.a ${SRCDIR}/../cbridge/vulkan_loader.o -lstdc++ -lm -lwinpthread
 #include "wrapper.h"
 #include "schema_bridge.h"
 #include <stdlib.h>
@@ -21,15 +21,74 @@ type Model struct {
 	ptr *C.glean_model_t
 }
 
+type BackendDevice struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Backend     string `json:"backend"`
+	Type        string `json:"type"`
+	MemoryFree  uint64 `json:"memory_free"`
+	MemoryTotal uint64 `json:"memory_total"`
+}
+
+func BackendInit() {
+	C.glean_backend_init()
+}
+
+func BackendFree() {
+	C.glean_backend_free()
+}
+
+func Backends() []string {
+	count := int(C.glean_backend_count())
+	backends := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		if name := C.glean_backend_name(C.int32_t(i)); name != nil {
+			backends = append(backends, C.GoString(name))
+		}
+	}
+	return backends
+}
+
+func BackendDevices() []BackendDevice {
+	types := []string{"cpu", "gpu", "igpu", "accelerator", "meta"}
+	count := int(C.glean_backend_device_count())
+	devices := make([]BackendDevice, 0, count)
+	for i := 0; i < count; i++ {
+		index := C.int32_t(i)
+		device := BackendDevice{}
+		if value := C.glean_backend_device_name(index); value != nil {
+			device.Name = C.GoString(value)
+		}
+		if value := C.glean_backend_device_description(index); value != nil {
+			device.Description = C.GoString(value)
+		}
+		if value := C.glean_backend_device_backend(index); value != nil {
+			device.Backend = C.GoString(value)
+		}
+		deviceType := int(C.glean_backend_device_type(index))
+		if deviceType >= 0 && deviceType < len(types) {
+			device.Type = types[deviceType]
+		} else {
+			device.Type = "unknown"
+		}
+		var freeBytes, totalBytes C.uint64_t
+		C.glean_backend_device_memory(index, &freeBytes, &totalBytes)
+		device.MemoryFree = uint64(freeBytes)
+		device.MemoryTotal = uint64(totalBytes)
+		devices = append(devices, device)
+	}
+	return devices
+}
+
 func SetLogLevel(level int) {
 	C.glean_set_log_level(C.int32_t(level))
 }
 
-func Load(modelPath string, nCtx int, nThreads int, nGPULayers int) (*Model, error) {
+func Load(modelPath string, nCtx int, nThreads int, nGPULayers int, allowCPUFallback bool) (*Model, error) {
 	cPath := C.CString(modelPath)
 	defer C.free(unsafe.Pointer(cPath))
 
-	m := C.glean_load(cPath, C.int32_t(nCtx), C.int32_t(nThreads), C.int32_t(nGPULayers))
+	m := C.glean_load(cPath, C.int32_t(nCtx), C.int32_t(nThreads), C.int32_t(nGPULayers), C.bool(allowCPUFallback))
 	if m == nil {
 		return nil, fmt.Errorf("failed to load model from %s", modelPath)
 	}

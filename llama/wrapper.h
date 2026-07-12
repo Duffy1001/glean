@@ -20,8 +20,24 @@ typedef struct {
 // Messages below this level are suppressed.
 void glean_set_log_level(int32_t level);
 
+// Initialize compiled backends and enumerate available devices.
+void glean_backend_init(void);
+
+// Free global backend resources after all models have been freed.
+void glean_backend_free(void);
+
+// Backend/device reporting.
+int32_t glean_backend_count(void);
+const char * glean_backend_name(int32_t index);
+int32_t glean_backend_device_count(void);
+const char * glean_backend_device_name(int32_t index);
+const char * glean_backend_device_description(int32_t index);
+const char * glean_backend_device_backend(int32_t index);
+int32_t glean_backend_device_type(int32_t index);
+void glean_backend_device_memory(int32_t index, uint64_t * free_bytes, uint64_t * total_bytes);
+
 // Load model from file path.
-glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers);
+glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers, bool allow_cpu_fallback);
 
 // Free model and context.
 void glean_free(glean_model_t * m);

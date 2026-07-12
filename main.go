@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -36,8 +37,11 @@ func main() {
 	chunkLines := flag.Int("chunk-lines", 4, "Maximum input lines per array extraction chunk (0 disables)")
 	noGrammar := flag.Bool("no-grammar", false, "Disable grammar-constrained generation")
 	verbose := flag.Bool("verbose", false, "Show llama.cpp debug output")
+	device := flag.String("device", "auto", "Inference device: auto, cpu, or gpu")
+	gpuLayers := flag.Int("gpu-layers", -1, "Model layers to offload (-1 means all available)")
 	pkField := flag.String("pk", "", "Primary key field for dedup/merge (default: first field with --fields)")
 	showVersion := flag.Bool("version", false, "Show version and build edition")
+	showReport := flag.Bool("report", false, "Report available inference backends and devices as JSON")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("glean %s (%s)\n", version, buildVariant())
@@ -53,6 +57,66 @@ func main() {
 		if *verbose {
 			fmt.Fprintf(os.Stderr, format, args...)
 		}
+	}
+	llama.BackendInit()
+	defer llama.BackendFree()
+
+	devices := llama.BackendDevices()
+	hasGPU := false
+	for _, backendDevice := range devices {
+		if backendDevice.Type == "gpu" || backendDevice.Type == "igpu" {
+			hasGPU = true
+			break
+		}
+	}
+	if *showReport {
+		expectedAccelerator := "vulkan"
+		defaultDevice := "cpu"
+		if runtime.GOOS == "darwin" {
+			expectedAccelerator = "metal"
+			if hasGPU {
+				defaultDevice = "gpu"
+			}
+		}
+		report := struct {
+			Version             string                `json:"version"`
+			Variant             string                `json:"variant"`
+			OS                  string                `json:"os"`
+			Architecture        string                `json:"architecture"`
+			ExpectedAccelerator string                `json:"expected_accelerator"`
+			AccelerationReady   bool                  `json:"acceleration_ready"`
+			DefaultDevice       string                `json:"default_device"`
+			Backends            []string              `json:"backends"`
+			Devices             []llama.BackendDevice `json:"devices"`
+		}{version, buildVariant(), runtime.GOOS, runtime.GOARCH, expectedAccelerator, hasGPU, defaultDevice, llama.Backends(), devices}
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Report error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(out))
+		return
+	}
+
+	switch *device {
+	case "auto":
+		if runtime.GOOS != "darwin" || !hasGPU {
+			*gpuLayers = 0
+		}
+	case "cpu":
+		*gpuLayers = 0
+	case "gpu":
+		if !hasGPU {
+			fmt.Fprintln(os.Stderr, "No usable GPU backend detected; use --report for details")
+			os.Exit(1)
+		}
+		if *gpuLayers == 0 {
+			fmt.Fprintln(os.Stderr, "--device gpu conflicts with --gpu-layers 0")
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown device %q (available: auto, cpu, gpu)\n", *device)
+		os.Exit(1)
 	}
 
 	args := flag.Args()
@@ -85,7 +149,7 @@ func main() {
 
 	verbosef("Loading model (%s)...\n", *modelChoice)
 	start := time.Now()
-	m, err := llama.Load(modelPath, *nCtx, *nThreads, -1)
+	m, err := llama.Load(modelPath, *nCtx, *nThreads, *gpuLayers, *device == "auto")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading model: %v\n", err)
 		os.Exit(1)

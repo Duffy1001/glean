@@ -37,7 +37,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             os: linux
             arch: arm64
-          - runner: macos-13
+          - runner: macos-15-large
             os: darwin
             arch: amd64
           - runner: macos-14
@@ -56,7 +56,7 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = linux ]; then
             sudo apt-get update -qq
-            sudo apt-get install -y -qq build-essential cmake
+            sudo apt-get install -y -qq build-essential cmake glslc libvulkan-dev spirv-headers
           else
             brew install cmake
           fi
@@ -76,10 +76,10 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ matrix.os }}" = linux ]; then
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo high" -o "dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo embedded" -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" .
-            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION} -extldflags=-static" -tags "osusergo netgo embedded high" -o "dist/glean-full-high-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "osusergo netgo" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "osusergo netgo high" -o "dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "osusergo netgo embedded" -o "dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }}" .
+            CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags "osusergo netgo embedded high" -o "dist/glean-full-high-${{ matrix.os }}-${{ matrix.arch }}" .
           else
             CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -o "dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }}" .
             CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${VERSION}" -tags high -o "dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }}" .
@@ -93,8 +93,11 @@ jobs:
           dist/glean-thin-high-${{ matrix.os }}-${{ matrix.arch }} --version
           dist/glean-full-fast-${{ matrix.os }}-${{ matrix.arch }} --version
           dist/glean-full-high-${{ matrix.os }}-${{ matrix.arch }} --version
+          dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --report
           if [ "${{ matrix.os }}" = linux ]; then
-            ! readelf -d dist/glean-* | grep NEEDED
+            GGML_DISABLE_VULKAN=1 dist/glean-thin-fast-${{ matrix.os }}-${{ matrix.arch }} --report
+            bad=$(readelf -d dist/glean-* | grep NEEDED | grep -vE 'libc\.so|libm\.so' || true)
+            test -z "$bad"
           else
             bad=$(otool -L dist/glean-* | grep -v '^dist/' | grep -vE '^\s+(/usr/lib/|/System/Library/)' || true)
             test -z "$bad"
@@ -128,6 +131,9 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-shaderc
+            mingw-w64-x86_64-spirv-headers
+            mingw-w64-x86_64-vulkan-devel
       - uses: actions/download-artifact@v4
         with:
           name: embedded-model
@@ -159,6 +165,7 @@ jobs:
           dist/glean-thin-high-windows-amd64.exe --version
           dist/glean-full-fast-windows-amd64.exe --version
           dist/glean-full-high-windows-amd64.exe --version
+          dist/glean-thin-fast-windows-amd64.exe --report
           ! objdump -p dist/*.exe | grep 'DLL Name' | grep -viE '(KERNEL32|msvcrt|USER32|ADVAPI32|WS2_32|bcrypt|ntdll)'
       - uses: actions/upload-artifact@v4
         with:

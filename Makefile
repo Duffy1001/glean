@@ -17,12 +17,21 @@ UNAME_M := $(shell uname -m 2>/dev/null || echo x86_64)
 ifeq ($(UNAME_S),Linux)
 	PLATFORM := linux
 	CXX ?= g++
+	BACKEND_CMAKE_ARGS := -DGGML_VULKAN=ON
+	BACKEND_TARGET := ggml-vulkan
+	BACKEND_OBJ := $(CBRIDGE_DIR)/vulkan_loader.o
 else ifeq ($(UNAME_S),Darwin)
 	PLATFORM := darwin
 	CXX ?= clang++
+	BACKEND_CMAKE_ARGS := -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+	BACKEND_TARGET := ggml-metal
+	BACKEND_OBJ :=
 else
 	PLATFORM := windows
 	CXX ?= g++
+	BACKEND_CMAKE_ARGS := -DGGML_VULKAN=ON
+	BACKEND_TARGET := ggml-vulkan
+	BACKEND_OBJ := $(CBRIDGE_DIR)/vulkan_loader.o
 endif
 
 ifeq ($(UNAME_M),x86_64)
@@ -70,10 +79,11 @@ configure-llama: setup
 		-DGGML_BMI2=ON \
 		-DGGML_FMA=ON \
 		-DGGML_F16C=ON \
+		$(BACKEND_CMAKE_ARGS) \
 		$(CMAKE_EXTRA_ARGS)
 
 build-llama: configure-llama
-	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama llama-common ggml
+	cmake --build $(BUILD_DIR) --config Release -j $(shell nproc 2>/dev/null || echo 4) -- llama llama-common ggml $(BACKEND_TARGET)
 
 build-bridge: setup
 	$(CXX) -c -O2 -std=c++17 \
@@ -82,6 +92,9 @@ build-bridge: setup
 		-I$(CURDIR)/$(LLAMA_DIR)/ggml/include \
 		$(VENDOR_INC) \
 		$(CBRIDGE_DIR)/schema_bridge.cpp -o $(BRIDGE_OBJ)
+	@if [ -n "$(BACKEND_OBJ)" ]; then \
+		$(CC) -c -O2 -I$(CURDIR)/$(LLAMA_DIR)/ggml/include $(if $(VULKAN_SDK),-I$(VULKAN_SDK)/include) $(CBRIDGE_DIR)/vulkan_loader.c -o $(BACKEND_OBJ); \
+	fi
 
 build-go: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
@@ -113,29 +126,29 @@ build-full-high: build-llama build-bridge prepare-high
 
 static: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-static .
 
 static-thin-fast: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-thin-fast-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo' -o $(BIN_DIR)/glean-thin-fast-static .
 
 static-thin-high: build-llama build-bridge
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo high' -o $(BIN_DIR)/glean-thin-high-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo high' -o $(BIN_DIR)/glean-thin-high-static .
 
 static-full-fast: build-llama build-bridge prepare-fast
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo embedded' -o $(BIN_DIR)/glean-full-fast-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo embedded' -o $(BIN_DIR)/glean-full-fast-static .
 
 static-full-high: build-llama build-bridge prepare-high
 	mkdir -p $(BIN_DIR)
-	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS) -extldflags=-static' -tags 'osusergo netgo embedded high' -o $(BIN_DIR)/glean-full-high-static .
+	CGO_ENABLED=1 go build -ldflags '$(GO_LDFLAGS)' -tags 'osusergo netgo embedded high' -o $(BIN_DIR)/glean-full-high-static .
 
 test: build-llama build-bridge
 	go test -v ./...
 
 clean-native:
-	rm -rf $(BIN_DIR) $(BRIDGE_OBJ)
+	rm -rf $(BIN_DIR) $(BRIDGE_OBJ) $(BACKEND_OBJ)
 
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR) $(BRIDGE_OBJ) glean glean-*-fast glean-*-high glean-static glean-*-static dist
+	rm -rf $(BUILD_DIR) $(BIN_DIR) $(BRIDGE_OBJ) $(BACKEND_OBJ) glean glean-*-fast glean-*-high glean-static glean-*-static dist

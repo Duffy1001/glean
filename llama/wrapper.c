@@ -1,4 +1,5 @@
 #include "wrapper.h"
+#include "ggml-backend.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -18,14 +19,84 @@ void glean_set_log_level(int32_t level) {
     llama_log_set(glean_log_callback, NULL);
 }
 
-glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers) {
+void glean_backend_init(void) {
+#if defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+    extern int glean_vulkan_loader_available(void);
+    if (!glean_vulkan_loader_available()) {
+#ifdef _WIN32
+        _putenv_s("GGML_DISABLE_VULKAN", "1");
+#else
+        setenv("GGML_DISABLE_VULKAN", "1", 0);
+#endif
+    }
+#endif
+    llama_backend_init();
+}
+
+void glean_backend_free(void) {
+    llama_backend_free();
+}
+
+int32_t glean_backend_count(void) {
+    return (int32_t)ggml_backend_reg_count();
+}
+
+const char * glean_backend_name(int32_t index) {
+    if (index < 0 || (size_t)index >= ggml_backend_reg_count()) return NULL;
+    return ggml_backend_reg_name(ggml_backend_reg_get((size_t)index));
+}
+
+int32_t glean_backend_device_count(void) {
+    return (int32_t)ggml_backend_dev_count();
+}
+
+static ggml_backend_dev_t glean_backend_device(int32_t index) {
+    if (index < 0 || (size_t)index >= ggml_backend_dev_count()) return NULL;
+    return ggml_backend_dev_get((size_t)index);
+}
+
+const char * glean_backend_device_name(int32_t index) {
+    ggml_backend_dev_t device = glean_backend_device(index);
+    return device ? ggml_backend_dev_name(device) : NULL;
+}
+
+const char * glean_backend_device_description(int32_t index) {
+    ggml_backend_dev_t device = glean_backend_device(index);
+    return device ? ggml_backend_dev_description(device) : NULL;
+}
+
+const char * glean_backend_device_backend(int32_t index) {
+    ggml_backend_dev_t device = glean_backend_device(index);
+    if (!device) return NULL;
+    return ggml_backend_reg_name(ggml_backend_dev_backend_reg(device));
+}
+
+int32_t glean_backend_device_type(int32_t index) {
+    ggml_backend_dev_t device = glean_backend_device(index);
+    return device ? (int32_t)ggml_backend_dev_type(device) : -1;
+}
+
+void glean_backend_device_memory(int32_t index, uint64_t * free_bytes, uint64_t * total_bytes) {
+    size_t free_memory = 0;
+    size_t total_memory = 0;
+    ggml_backend_dev_t device = glean_backend_device(index);
+    if (device) ggml_backend_dev_memory(device, &free_memory, &total_memory);
+    if (free_bytes) *free_bytes = (uint64_t)free_memory;
+    if (total_bytes) *total_bytes = (uint64_t)total_memory;
+}
+
+static glean_model_t * glean_load_once(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers, bool cpu_only) {
+    ggml_backend_dev_t cpu_devices[] = { NULL };
     struct llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = n_gpu_layers;
     mparams.use_mmap = true;
+    if (cpu_only) {
+        mparams.devices = cpu_devices;
+        mparams.n_gpu_layers = 0;
+    }
 
     struct llama_model * model = llama_model_load_from_file(model_path, mparams);
     if (!model) {
-        fprintf(stderr, "Failed to load model from %s\n", model_path);
         return NULL;
     }
 
@@ -39,7 +110,6 @@ glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_thr
 
     struct llama_context * ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
-        fprintf(stderr, "Failed to create context\n");
         llama_model_free(model);
         return NULL;
     }
@@ -75,6 +145,15 @@ glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_thr
         m->token_data[i].p = 0.0f;
     }
     return m;
+}
+
+glean_model_t * glean_load(const char * model_path, int32_t n_ctx, int32_t n_threads, int32_t n_gpu_layers, bool allow_cpu_fallback) {
+    glean_model_t * model = glean_load_once(model_path, n_ctx, n_threads, n_gpu_layers, n_gpu_layers == 0);
+    if (!model && allow_cpu_fallback && n_gpu_layers != 0) {
+        model = glean_load_once(model_path, n_ctx, n_threads, 0, true);
+    }
+    if (!model) fprintf(stderr, "Failed to load model from %s\n", model_path);
+    return model;
 }
 
 void glean_free(glean_model_t * m) {
